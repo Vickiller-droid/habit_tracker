@@ -1,0 +1,6 @@
+{
+  "name": "Vicfungo",
+  "description": "AI-powered personal growth and premium habit tracker platform based on behavioral psychology.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
