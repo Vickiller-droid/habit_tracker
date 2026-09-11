@@ -314,9 +314,9 @@ export default function WearableSync({ stats, onSyncComplete, darkMode = false }
           </div>
           
           <div className="space-y-3">
-            {devices.map((device) => (
+            {devices.map((device, idx) => (
               <div 
-                key={device.type} 
+                key={`wearable-${device.type}-${idx}`} 
                 id={`wearable-card-${device.type}`}
                 className={`p-4 rounded-2xl border transition-all duration-300 ${
                   device.connected 
@@ -584,7 +584,7 @@ export default function WearableSync({ stats, onSyncComplete, darkMode = false }
                     {/* Technical Console Output */}
                     <div className="w-full bg-stone-950 p-3 rounded-xl border border-stone-850 text-left font-mono text-[9px] text-emerald-500 h-24 overflow-y-auto space-y-1">
                       {scanLogs.map((log, index) => (
-                        <div key={index} className="flex gap-1.5 items-center">
+                        <div key={`scan-log-${index}`} className="flex gap-1.5 items-center">
                           <span className="text-stone-600 font-bold select-none">&gt;</span>
                           <span>{log}</span>
                         </div>
@@ -612,9 +612,9 @@ export default function WearableSync({ stats, onSyncComplete, darkMode = false }
                     </div>
 
                     <div className="space-y-2">
-                      {getDiscoveredDevicesList(pairingDevice.type).map((item) => (
+                      {getDiscoveredDevicesList(pairingDevice.type).map((item, idx) => (
                         <button
-                          key={item.model}
+                          key={`discovered-${item.model}-${idx}`}
                           id={`discovered-item-${item.model.replace(/\s+/g, '-').toLowerCase()}`}
                           onClick={() => setSelectedModel(item.model)}
                           className={`w-full p-3.5 rounded-xl border text-left flex items-center justify-between transition-all ${

@@ -111,28 +111,30 @@ export default function FirstDayQuests({
       animate={{ opacity: 1, y: 0 }}
       className={`rounded-3xl border p-5 transition-all shadow-sm mb-6 ${
         darkMode 
-          ? 'bg-gradient-to-br from-stone-900 via-stone-850 to-stone-900 border-stone-800' 
+          ? 'bg-[#171F2A] border-[#334255]' 
           : 'bg-gradient-to-br from-orange-50/70 via-white to-amber-50/50 border-orange-100'
       }`}
     >
       {/* Header Bar */}
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-[#FF8A3D] text-white rounded-2xl shadow-sm">
+          <div className="p-2.5 bg-[#FF7A1A] text-white rounded-2xl shadow-sm">
             <Trophy className="w-5 h-5" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold font-mono text-[#FF8A3D] uppercase tracking-wider">
+              <span className={`text-[10px] font-bold font-mono uppercase tracking-wider ${
+                darkMode ? 'text-[#FFB074]' : 'text-[#FF7A1A]'
+              }`}>
                 First Day Victory Quests
               </span>
               {isAllCompleted && (
-                <span className="text-[10px] font-bold font-mono text-emerald-600 bg-emerald-100 dark:bg-emerald-950/50 px-2 py-0.5 rounded-full">
+                <span className="text-[10px] font-bold font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-800 px-2 py-0.5 rounded-full">
                   100% COMPLETE 🎉
                 </span>
               )}
             </div>
-            <h3 className="text-base font-bold text-stone-900 dark:text-stone-100">
+            <h3 className={`text-base font-bold ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-900'}`}>
               {isAllCompleted ? 'First Day Quests Mastered!' : `Unlock 'First Day Champion' (${completedCount}/${quests.length})`}
             </h3>
           </div>
@@ -142,7 +144,9 @@ export default function FirstDayQuests({
           <button
             type="button"
             onClick={() => setIsCollapsed(!isCollapsed)}
-            className="p-2 text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 rounded-xl hover:bg-stone-100 dark:hover:bg-stone-800 transition cursor-pointer"
+            className={`p-2 rounded-xl transition cursor-pointer ${
+              darkMode ? 'text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-[#1E2836]' : 'text-stone-400 hover:text-stone-600 hover:bg-stone-100'
+            }`}
             title={isCollapsed ? "Expand Quests" : "Collapse Quests"}
           >
             {isCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
@@ -152,7 +156,9 @@ export default function FirstDayQuests({
             <button
               type="button"
               onClick={handleDismiss}
-              className="p-2 text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 rounded-xl hover:bg-stone-100 dark:hover:bg-stone-800 transition cursor-pointer"
+              className={`p-2 rounded-xl transition cursor-pointer ${
+                darkMode ? 'text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-[#1E2836]' : 'text-stone-400 hover:text-stone-600 hover:bg-stone-100'
+              }`}
               title="Dismiss Banner"
             >
               <X className="w-4 h-4" />
@@ -162,9 +168,11 @@ export default function FirstDayQuests({
       </div>
 
       {/* Progress Bar */}
-      <div className="w-full bg-stone-200/80 dark:bg-stone-800 h-2 rounded-full overflow-hidden mt-3.5 mb-2">
+      <div className={`w-full h-2 rounded-full overflow-hidden mt-3.5 mb-2 ${
+        darkMode ? 'bg-[#0F141C] border border-[#334255]' : 'bg-stone-200/80'
+      }`}>
         <motion.div
-          className="h-full bg-gradient-to-r from-[#FF8A3D] to-amber-500 rounded-full"
+          className="h-full bg-gradient-to-r from-[#FF7A1A] to-amber-500 rounded-full"
           animate={{ width: `${(completedCount / quests.length) * 100}%` }}
           transition={{ duration: 0.4 }}
         />
@@ -179,13 +187,13 @@ export default function FirstDayQuests({
             exit={{ opacity: 0, height: 0 }}
             className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3"
           >
-            {quests.map((quest) => (
+            {quests.map((quest, idx) => (
               <div
-                key={quest.id}
+                key={`quest-${quest.id}-${idx}`}
                 className={`p-3.5 rounded-2xl border transition flex flex-col justify-between gap-3 ${
                   quest.completed
-                    ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200/60 dark:border-emerald-900/40 opacity-90'
-                    : 'bg-white dark:bg-stone-850 border-stone-200/80 dark:border-stone-800 hover:border-orange-200'
+                    ? darkMode ? 'bg-emerald-950/20 border-emerald-900/40 opacity-90' : 'bg-emerald-50/50 border-emerald-200/60 opacity-90'
+                    : darkMode ? 'bg-[#1E2836] border-[#334255] hover:border-[#FF7A1A]/40' : 'bg-white border-stone-200/80 hover:border-orange-200'
                 }`}
               >
                 <div className="flex items-start gap-3">
@@ -193,21 +201,27 @@ export default function FirstDayQuests({
                     {quest.completed ? (
                       <CheckCircle2 className="w-5 h-5 text-emerald-500" />
                     ) : (
-                      <Circle className="w-5 h-5 text-stone-300 dark:text-stone-600" />
+                      <Circle className={`w-5 h-5 ${darkMode ? 'text-[#64748B]' : 'text-stone-300'}`} />
                     )}
                   </div>
                   <div>
-                    <h4 className={`text-xs font-bold ${quest.completed ? 'line-through text-stone-500 dark:text-stone-400' : 'text-stone-800 dark:text-stone-100'}`}>
+                    <h4 className={`text-xs font-bold ${
+                      quest.completed 
+                        ? darkMode ? 'line-through text-[#64748B]' : 'line-through text-stone-500' 
+                        : darkMode ? 'text-[#F8FAFC]' : 'text-stone-800'
+                    }`}>
                       {quest.title}
                     </h4>
-                    <p className="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5 leading-snug">
+                    <p className={`text-[11px] mt-0.5 leading-snug ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'}`}>
                       {quest.description}
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between pt-1 border-t border-stone-100 dark:border-stone-800">
-                  <span className="text-[10px] font-mono font-bold text-[#FF8A3D] bg-orange-50 dark:bg-orange-950/40 px-2 py-0.5 rounded">
+                <div className={`flex items-center justify-between pt-1 border-t ${darkMode ? 'border-[#334255]' : 'border-stone-100'}`}>
+                  <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
+                    darkMode ? 'bg-[rgba(255,122,26,0.15)] text-[#FFB074] border-[rgba(255,122,26,0.35)]' : 'bg-orange-50 text-[#FF7A1A] border-orange-100'
+                  }`}>
                     +{quest.xpReward} XP
                   </span>
 
@@ -215,7 +229,7 @@ export default function FirstDayQuests({
                     <button
                       type="button"
                       onClick={() => handleQuestAction(quest)}
-                      className="text-xs font-bold text-[#FF8A3D] hover:text-[#e77a2f] flex items-center gap-1 cursor-pointer"
+                      className="text-xs font-bold text-[#FF7A1A] hover:text-[#e76b13] flex items-center gap-1 cursor-pointer"
                     >
                       {quest.actionText} <ArrowRight className="w-3.5 h-3.5" />
                     </button>

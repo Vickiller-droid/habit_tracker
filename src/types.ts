@@ -35,6 +35,7 @@ export interface Habit {
   difficulty: 'easy' | 'medium' | 'hard';
   xpReward: number;
   reminderTime: string; // HH:MM
+  reminderEnabled?: boolean;
   createdAt: string;
   isArchived: boolean;
   records: { [date: string]: HabitRecord }; // keyed by YYYY-MM-DD
@@ -73,6 +74,8 @@ export interface UserStats {
   totalCompletedCount: number;
   streakDays: number; // consecutive active days in app
   lastActiveDate: string; // YYYY-MM-DD
+  graceShieldAvailable?: boolean;
+  graceShieldLastUsedDate?: string; // YYYY-MM-DD
 }
 
 export interface CoachMessage {

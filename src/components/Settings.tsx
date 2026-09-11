@@ -89,21 +89,19 @@ export default function Settings({ userProfile, stats, habits, onUpgradePro, onR
   const triggerMockNotification = () => {
     if (!remindersEnabled) return;
     
-    // Simulate Browser Notification using standard Javascript
+    // Trigger Native Browser System Notification
     if ('Notification' in window) {
       Notification.requestPermission().then((permission) => {
         setNotificationState(permission);
         if (permission === 'granted') {
-          new Notification('Vicfungo Stack Reminder', {
-            body: 'Dr. Gethro says: "Time to complete your afternoon habit stack and secure your multiplier!"',
-            icon: '/favicon.ico'
+          new Notification('⏰ Vicfungo Habit Alert', {
+            body: 'Dr. Gethro says: "Time to complete your contract and secure your multiplier!"',
+            icon: '/favicon.ico',
+            tag: 'vicfungo-settings-test',
+            requireInteraction: true
           });
-        } else {
-          alert('Simulated Alert: Time to complete your afternoon habit stack!');
         }
       });
-    } else {
-      alert('Simulated Alert: Time to complete your afternoon habit stack!');
     }
   };
 
@@ -203,7 +201,7 @@ export default function Settings({ userProfile, stats, habits, onUpgradePro, onR
                   id="btn-toggle-reminders"
                   onClick={() => setRemindersEnabled(!remindersEnabled)}
                   className={`w-12 h-6 rounded-full p-0.5 transition duration-300 cursor-pointer ${
-                    remindersEnabled ? 'bg-[#FF8A3D]' : 'bg-[#F5F1EE]'
+                    remindersEnabled ? 'bg-gradient-to-r from-orange-500 to-amber-500' : 'bg-stone-200 dark:bg-stone-700'
                   }`}
                 >
                   <div className={`w-5 h-5 bg-white rounded-full shadow transition duration-300 ${
@@ -221,7 +219,7 @@ export default function Settings({ userProfile, stats, habits, onUpgradePro, onR
                     className={`px-4 py-2 border rounded-2xl text-xs font-semibold transition flex items-center gap-2 cursor-pointer ${
                       darkMode 
                         ? 'bg-stone-800 border-stone-700 text-stone-300 hover:bg-stone-750' 
-                        : 'bg-[#FEFAF7] hover:bg-[#F5F1EE] border-stone-200 text-stone-600'
+                        : 'bg-stone-50 hover:bg-stone-100 border-stone-200 text-stone-700'
                     }`}
                   >
                     Test Local Stack Reminder
@@ -235,7 +233,7 @@ export default function Settings({ userProfile, stats, habits, onUpgradePro, onR
 
           <div>
             <div className="flex items-center gap-2 mb-4">
-              <Accessibility className="w-5 h-5 text-[#FF8A3D]" />
+              <Accessibility className="w-5 h-5 text-orange-500" />
               <h3 className={`font-bold ${darkMode ? 'text-stone-100' : 'text-stone-800'} text-sm`}>Accessibility Controls</h3>
             </div>
 
@@ -249,7 +247,7 @@ export default function Settings({ userProfile, stats, habits, onUpgradePro, onR
                   id="btn-toggle-darkmode"
                   onClick={onToggleDarkMode}
                   className={`w-12 h-6 rounded-full p-0.5 transition duration-300 cursor-pointer ${
-                    darkMode ? 'bg-[#FF8A3D]' : (darkMode ? 'bg-stone-800' : 'bg-[#F5F1EE]')
+                    darkMode ? 'bg-gradient-to-r from-orange-500 to-amber-500' : 'bg-stone-200 dark:bg-stone-700'
                   }`}
                 >
                   <div className={`w-5 h-5 bg-white rounded-full shadow transition duration-300 ${
@@ -283,7 +281,7 @@ export default function Settings({ userProfile, stats, habits, onUpgradePro, onR
                   id="btn-toggle-contrast"
                   onClick={() => setHighContrast(!highContrast)}
                   className={`w-12 h-6 rounded-full p-0.5 transition duration-300 cursor-pointer ${
-                    highContrast ? 'bg-[#FF8A3D]' : 'bg-[#F5F1EE]'
+                    highContrast ? 'bg-gradient-to-r from-orange-500 to-amber-500' : 'bg-stone-200 dark:bg-stone-700'
                   }`}
                 >
                   <div className={`w-5 h-5 bg-white rounded-full shadow transition duration-300 ${
@@ -423,7 +421,7 @@ export default function Settings({ userProfile, stats, habits, onUpgradePro, onR
                 className={`p-4 border rounded-2xl text-center transition cursor-pointer flex flex-col items-center gap-2 ${
                   darkMode 
                     ? 'bg-stone-800/50 hover:bg-stone-800 border-stone-700' 
-                    : 'bg-[#FEFAF7] hover:bg-[#F5F1EE] border-stone-200'
+                    : 'bg-stone-50 hover:bg-stone-100 border-stone-200'
                 }`}
               >
                 <Download className="w-5 h-5 text-stone-500" />
@@ -437,7 +435,7 @@ export default function Settings({ userProfile, stats, habits, onUpgradePro, onR
                 className={`p-4 border rounded-2xl text-center transition cursor-pointer flex flex-col items-center gap-2 ${
                   darkMode 
                     ? 'bg-stone-800/50 hover:bg-stone-800 border-stone-700' 
-                    : 'bg-[#FEFAF7] hover:bg-[#F5F1EE] border-stone-200'
+                    : 'bg-stone-50 hover:bg-stone-100 border-stone-200'
                 }`}
               >
                 <Upload className="w-5 h-5 text-stone-500" />

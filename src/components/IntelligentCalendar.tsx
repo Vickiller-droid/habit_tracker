@@ -232,17 +232,17 @@ export default function IntelligentCalendar({ habits, selectedDate, onExecuteHab
 
   return (
     <div className={`p-6 rounded-[32px] border ${
-      darkMode ? 'bg-stone-900 border-stone-800' : 'bg-white border-stone-100'
+      darkMode ? 'bg-[#171F2A] border-[#334255]' : 'bg-white border-stone-100'
     } shadow-premium space-y-6 transition-colors`} id="intelligent-calendar-module">
       
       {/* Header Info */}
       <div className="flex justify-between items-start gap-4 flex-wrap">
         <div>
           <div className="flex items-center gap-2 mb-1.5">
-            <Calendar className="w-5 h-5 text-[#FF8A3D]" />
-            <h3 className={`font-bold ${darkMode ? 'text-stone-100' : 'text-stone-800'} text-sm`}>Chrono-Gap Routine Interceptor</h3>
+            <Calendar className="w-5 h-5 text-[#FF7A1A]" />
+            <h3 className={`font-bold ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-800'} text-sm`}>Chrono-Gap Routine Interceptor</h3>
           </div>
-          <p className="text-xs text-stone-500 leading-relaxed max-w-lg">
+          <p className={`text-xs ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'} leading-relaxed max-w-lg`}>
             This module integrates with your workspace schedule. By scanning gaps between meetings, Vicfungo inserts micro-somatic breaks to reduce cognitive fatigue and anchor your identity.
           </p>
         </div>
@@ -250,7 +250,7 @@ export default function IntelligentCalendar({ habits, selectedDate, onExecuteHab
         {/* Sync Controls */}
         <div className="shrink-0">
           {calendarConnected ? (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 rounded-xl border border-emerald-500/20 text-[10px] text-emerald-500 font-mono font-bold">
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 rounded-xl border border-emerald-500/20 text-[10px] text-emerald-400 font-mono font-bold">
               <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
               CONNECTED: {syncedPlatform}
             </div>
@@ -259,7 +259,11 @@ export default function IntelligentCalendar({ habits, selectedDate, onExecuteHab
               <button
                 onClick={() => handleConnectCalendar('google')}
                 disabled={isSyncing}
-                className="px-3 py-1.5 bg-orange-50 hover:bg-orange-100/80 dark:bg-orange-950/20 text-[#FF8A3D] text-[10px] font-bold rounded-xl border border-orange-100 dark:border-orange-900/30 transition flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                className={`px-3 py-1.5 text-[10px] font-bold rounded-xl border transition flex items-center gap-1 cursor-pointer disabled:opacity-50 ${
+                  darkMode 
+                    ? 'bg-[rgba(255,122,26,0.15)] hover:bg-[rgba(255,122,26,0.25)] text-[#FFB074] border-[rgba(255,122,26,0.35)]' 
+                    : 'bg-orange-50 hover:bg-orange-100/80 text-[#FF7A1A] border-orange-100'
+                }`}
               >
                 {isSyncing ? <RefreshCw className="w-3 h-3 animate-spin" /> : 'Sync Google Calendar'}
               </button>
@@ -272,30 +276,30 @@ export default function IntelligentCalendar({ habits, selectedDate, onExecuteHab
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         
         {/* Left Side: Visual Daily Schedule Timeline */}
-        <div className={`p-4 rounded-2xl border ${darkMode ? 'bg-stone-950/40 border-stone-850' : 'bg-stone-50/50 border-stone-150/40'} space-y-3`}>
-          <div className="flex justify-between items-center border-b border-stone-200/50 dark:border-stone-800 pb-2.5">
-            <span className="text-[10px] font-mono font-bold text-stone-550 dark:text-stone-400 uppercase tracking-widest">Workspace Schedule</span>
-            <span className="text-[10px] font-mono font-bold text-stone-400">TODAY</span>
+        <div className={`p-4 rounded-2xl border ${darkMode ? 'bg-[#0F141C] border-[#334255]' : 'bg-stone-50/50 border-stone-150/40'} space-y-3`}>
+          <div className={`flex justify-between items-center border-b pb-2.5 ${darkMode ? 'border-[#334255]' : 'border-stone-200/50'}`}>
+            <span className={`text-[10px] font-mono font-bold uppercase tracking-widest ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'}`}>Workspace Schedule</span>
+            <span className="text-[10px] font-mono font-bold text-[#64748B]">TODAY</span>
           </div>
 
           <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
-            {agenda.map((event) => (
+            {agenda.map((event, idx) => (
               <div 
-                key={event.id}
+                key={`agenda-${event.id}-${idx}`}
                 className={`p-3 rounded-xl border text-xs transition flex justify-between items-center gap-3 ${
                   event.type === 'meeting' 
-                    ? (darkMode ? 'bg-orange-950/15 border-orange-900/20 text-orange-400' : 'bg-orange-50/40 border-orange-100/50 text-orange-850')
+                    ? (darkMode ? 'bg-[rgba(255,122,26,0.1)] border-[rgba(255,122,26,0.25)] text-[#FFB074]' : 'bg-orange-50/40 border-orange-100/50 text-orange-800')
                     : event.type === 'break'
-                      ? (darkMode ? 'bg-indigo-950/15 border-indigo-900/20 text-indigo-400' : 'bg-indigo-50/40 border-indigo-100/50 text-indigo-850')
-                      : (darkMode ? 'bg-stone-850/40 border-stone-800 text-stone-350' : 'bg-white border-stone-200 text-stone-750')
+                      ? (darkMode ? 'bg-indigo-950/25 border-indigo-900/40 text-indigo-300' : 'bg-indigo-50/40 border-indigo-100/50 text-indigo-800')
+                      : (darkMode ? 'bg-[#1E2836] border-[#334255] text-[#F8FAFC]' : 'bg-white border-stone-200 text-stone-750')
                 }`}
               >
                 <div className="min-w-0 flex-1">
                   <h4 className="font-bold truncate">{event.title}</h4>
-                  <p className="text-[10px] text-stone-500 font-medium mt-0.5 capitalize">{event.type} Session</p>
+                  <p className={`text-[10px] font-medium mt-0.5 capitalize ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'}`}>{event.type} Session</p>
                 </div>
                 <div className="shrink-0 flex items-center gap-1 text-[10px] font-mono font-bold">
-                  <Clock className="w-3 h-3 text-stone-400" />
+                  <Clock className={`w-3 h-3 ${darkMode ? 'text-[#64748B]' : 'text-stone-400'}`} />
                   <span>{event.startTime} - {event.endTime}</span>
                 </div>
               </div>
@@ -306,8 +310,10 @@ export default function IntelligentCalendar({ habits, selectedDate, onExecuteHab
         {/* Right Side: Intercept Gap Opportunities */}
         <div className="space-y-3">
           <div className="flex justify-between items-center">
-            <span className="text-[10px] font-mono font-bold text-stone-550 dark:text-stone-400 uppercase tracking-widest">Routine Intercepts</span>
-            <span className="text-[9px] font-mono font-bold text-[#FF8A3D] bg-orange-50 dark:bg-orange-950/25 px-2 py-0.5 rounded">
+            <span className={`text-[10px] font-mono font-bold uppercase tracking-widest ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'}`}>Routine Intercepts</span>
+            <span className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded border ${
+              darkMode ? 'bg-[rgba(255,122,26,0.15)] text-[#FFB074] border-[rgba(255,122,26,0.35)]' : 'bg-orange-50 text-[#FF7A1A] border-orange-100'
+            }`}>
               {gaps.length} Opportunity Blocks
             </span>
           </div>
@@ -325,8 +331,8 @@ export default function IntelligentCalendar({ habits, selectedDate, onExecuteHab
                 onClick={() => setSelectedPathwayFilter(p.id)}
                 className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold transition whitespace-nowrap cursor-pointer ${
                   selectedPathwayFilter === p.id
-                    ? 'bg-[#FF8A3D] text-white shadow-xs'
-                    : darkMode ? 'bg-stone-800/80 text-stone-400 hover:text-stone-200' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                    ? 'bg-[#FF7A1A] text-white shadow-xs'
+                    : darkMode ? 'bg-[#1E2836] text-[#94A3B8] hover:text-[#F8FAFC]' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
                 }`}
               >
                 {p.label}
@@ -335,7 +341,7 @@ export default function IntelligentCalendar({ habits, selectedDate, onExecuteHab
             <button
               onClick={() => setShuffleSeed(prev => prev + 1)}
               title="Recalibrate Engine"
-              className="ml-auto p-1 text-stone-400 hover:text-[#FF8A3D] transition cursor-pointer shrink-0"
+              className={`ml-auto p-1 transition cursor-pointer shrink-0 ${darkMode ? 'text-[#94A3B8] hover:text-[#FF7A1A]' : 'text-stone-400 hover:text-[#FF7A1A]'}`}
             >
               <RefreshCw className="w-3 h-3" />
             </button>
@@ -349,10 +355,10 @@ export default function IntelligentCalendar({ habits, selectedDate, onExecuteHab
               
               return (
                 <div 
-                  key={i}
+                  key={`gap-${gap.start}-${gap.end}-${i}`}
                   className={`p-4 rounded-2xl border transition relative overflow-hidden ${
                     darkMode 
-                      ? 'bg-stone-850/30 border-stone-800 hover:border-orange-500/30' 
+                      ? 'bg-[#171F2A] border-[#334255] hover:border-[#FF7A1A]/40' 
                       : 'bg-white border-stone-200 hover:border-orange-200 shadow-sm hover:shadow'
                   }`}
                 >
@@ -361,18 +367,24 @@ export default function IntelligentCalendar({ habits, selectedDate, onExecuteHab
                   <div className="flex justify-between items-start gap-3">
                     <div>
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-[10px] bg-orange-500/10 text-[#FF8A3D] border border-orange-500/20 px-2 py-0.5 rounded font-mono font-bold">
+                        <span className={`text-[10px] border px-2 py-0.5 rounded font-mono font-bold ${
+                          darkMode ? 'bg-[rgba(255,122,26,0.15)] text-[#FFB074] border-[rgba(255,122,26,0.35)]' : 'bg-orange-500/10 text-[#FF7A1A] border-orange-500/20'
+                        }`}>
                           ⏱ {gap.duration} MINUTE GAP
                         </span>
-                        <span className="text-[9px] text-stone-500 font-mono">
+                        <span className={`text-[9px] font-mono ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'}`}>
                           Between {gap.start} and {gap.end}
                         </span>
                       </div>
-                      <p className="text-[11px] text-stone-500 mt-2 leading-relaxed">
-                        After <span className="font-semibold text-stone-700 dark:text-stone-350">{gap.afterEvent}</span>, you have a natural window.
+                      <p className={`text-[11px] mt-2 leading-relaxed ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'}`}>
+                        After <span className={`font-semibold ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-700'}`}>{gap.afterEvent}</span>, you have a natural window.
                       </p>
                       {suggestionReason && (
-                        <p className="text-[10px] text-orange-600/95 dark:text-orange-400/95 font-medium italic mt-2 leading-relaxed bg-orange-500/5 dark:bg-orange-950/20 p-2.5 rounded-xl border border-orange-500/10">
+                        <p className={`text-[10px] font-medium italic mt-2 leading-relaxed p-2.5 rounded-xl border ${
+                          darkMode 
+                            ? 'bg-[rgba(255,122,26,0.1)] text-[#FFB074] border-[rgba(255,122,26,0.25)]' 
+                            : 'bg-orange-500/5 text-orange-700 border-orange-500/10'
+                        }`}>
                           💡 {suggestionReason}
                         </p>
                       )}
@@ -382,23 +394,25 @@ export default function IntelligentCalendar({ habits, selectedDate, onExecuteHab
                   {/* Suggested Routine Card Section */}
                   {suggestedHabit ? (
                     <div className={`mt-3 p-3 rounded-xl border flex items-center justify-between gap-3 ${
-                      darkMode ? 'bg-stone-900/50 border-stone-800' : 'bg-[#FEFAF7]/70 border-orange-100/40'
+                      darkMode ? 'bg-[#0F141C] border-[#334255]' : 'bg-[#FEFAF7]/70 border-orange-100/40'
                     }`}>
                       <div className="min-w-0 flex-1">
-                        <span className="text-[9px] font-mono font-bold text-orange-500 uppercase">SUGGESTED ROUTINE</span>
-                        <h5 className="text-xs font-bold text-stone-800 dark:text-stone-200 mt-0.5 truncate">{suggestedHabit.name}</h5>
-                        <p className="text-[9px] text-stone-500 mt-0.5 truncate">{suggestedHabit.psychologicalPrinciple} reinforcement</p>
+                        <span className="text-[9px] font-mono font-bold text-[#FF7A1A] uppercase">SUGGESTED ROUTINE</span>
+                        <h5 className={`text-xs font-bold mt-0.5 truncate ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-800'}`}>{suggestedHabit.name}</h5>
+                        <p className={`text-[9px] mt-0.5 truncate ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'}`}>{suggestedHabit.psychologicalPrinciple} reinforcement</p>
                       </div>
 
                       <button
                         onClick={() => onExecuteHabit(suggestedHabit)}
-                        className="px-3.5 py-1.5 bg-[#FF8A3D] hover:bg-[#e77a2f] text-white text-[10px] font-bold rounded-xl transition shadow-premium-orange cursor-pointer flex items-center gap-1 whitespace-nowrap"
+                        className="px-3.5 py-1.5 bg-[#FF7A1A] hover:bg-[#e76b13] text-white text-[10px] font-bold rounded-xl transition shadow-premium-orange cursor-pointer flex items-center gap-1 whitespace-nowrap"
                       >
                         <Sparkles className="w-3 h-3 fill-current" /> Intercept Now
                       </button>
                     </div>
                   ) : (
-                    <div className="mt-3 p-3 text-center text-[10px] text-stone-500 bg-stone-50 dark:bg-stone-900 rounded-xl border border-stone-200/50 dark:border-stone-800/50">
+                    <div className={`mt-3 p-3 text-center text-[10px] rounded-xl border ${
+                      darkMode ? 'bg-[#0F141C] text-[#94A3B8] border-[#334255]' : 'bg-stone-50 text-stone-500 border-stone-200/50'
+                    }`}>
                       🎉 No uncompleted routines left to intercept in this gap! Keep up the amazing work!
                     </div>
                   )}
@@ -407,7 +421,7 @@ export default function IntelligentCalendar({ habits, selectedDate, onExecuteHab
             })}
 
             {gaps.length === 0 && (
-              <div className="py-8 text-center text-stone-400 text-xs">
+              <div className={`py-8 text-center text-xs ${darkMode ? 'text-[#64748B]' : 'text-stone-400'}`}>
                 No meeting gaps detected. Great, you have uninterrupted focus!
               </div>
             )}

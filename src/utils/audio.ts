@@ -47,6 +47,38 @@ export const playSuccessSound = () => {
 };
 
 /**
+ * Play a clear, melodic notification alert sound when a habit window triggers.
+ */
+export const playNotificationAlertSound = () => {
+  try {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const ctx = new AudioContextClass();
+
+    const notes = [523.25, 659.25, 783.99]; // C5, E5, G5 major triad chime
+    notes.forEach((freq, idx) => {
+      const startTime = ctx.currentTime + idx * 0.08;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, startTime);
+
+      gain.gain.setValueAtTime(0, startTime);
+      gain.gain.linearRampToValueAtTime(0.12, startTime + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.35);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(startTime);
+      osc.stop(startTime + 0.36);
+    });
+  } catch (e) {
+    console.warn('Notification alert sound failed:', e);
+  }
+};
+
+/**
  * Play a gentle, minimalist countdown/pacing tick sound.
  */
 export const playTickSound = () => {

@@ -146,20 +146,26 @@ export default function FeedbackWidget({
           exit={{ opacity: 0, x: 50 }}
           transition={{ duration: 0.25 }}
           className={`w-full max-w-lg h-[90vh] max-h-[750px] rounded-[32px] shadow-2xl border flex flex-col overflow-hidden relative ${
-            darkMode ? 'bg-stone-900 border-stone-800 text-stone-100' : 'bg-white border-stone-100 text-stone-900'
+            darkMode ? 'bg-[#212C3C] border-[#37465B] text-[#F8FAFC]' : 'bg-white border-stone-100 text-stone-900'
           }`}
         >
           {/* Header */}
-          <div className="p-6 pb-4 border-b border-stone-100 dark:border-stone-800 flex items-center justify-between">
+          <div className={`p-6 pb-4 border-b flex items-center justify-between ${
+            darkMode ? 'border-[#334255]' : 'border-stone-100'
+          }`}>
             <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-orange-50 dark:bg-orange-950/30 rounded-2xl border border-orange-100 dark:border-orange-900/40 text-[#FF8A3D]">
+              <div className={`p-2.5 rounded-2xl border ${
+                darkMode ? 'bg-[rgba(255,122,26,0.15)] border-[rgba(255,122,26,0.35)] text-[#FFB074]' : 'bg-orange-50 border-orange-100 text-[#FF7A1A]'
+              }`}>
                 <MessageSquare className="w-6 h-6" />
               </div>
               <div>
-                <span className="text-[10px] font-bold font-mono text-[#FF8A3D] uppercase tracking-wider">
+                <span className={`text-[10px] font-bold font-mono uppercase tracking-wider ${
+                  darkMode ? 'text-[#FFB074]' : 'text-[#FF7A1A]'
+                }`}>
                   Community & Feedback
                 </span>
-                <h3 className="text-lg font-display font-black tracking-tight">
+                <h3 className={`text-lg font-display font-black tracking-tight ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-900'}`}>
                   Shape Vicfungo
                 </h3>
               </div>
@@ -168,21 +174,25 @@ export default function FeedbackWidget({
             <button
               type="button"
               onClick={onClose}
-              className="p-2 rounded-full text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 transition cursor-pointer"
+              className={`p-2 rounded-full transition cursor-pointer ${
+                darkMode ? 'text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-[#171F2A]' : 'text-stone-400 hover:text-stone-600 hover:bg-stone-100'
+              }`}
             >
               <X className="w-5 h-5" />
             </button>
           </div>
 
           {/* Tab Navigation */}
-          <div className="flex border-b border-stone-100 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-850/50 p-1.5 gap-1">
+          <div className={`flex border-b p-1.5 gap-1 ${
+            darkMode ? 'border-[#334255] bg-[#171F2A]' : 'border-stone-100 bg-stone-50/50'
+          }`}>
             <button
               type="button"
               onClick={() => setActiveTab('submit')}
               className={`flex-1 py-2 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer ${
                 activeTab === 'submit'
-                  ? 'bg-white dark:bg-stone-800 text-[#FF8A3D] shadow-sm'
-                  : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
+                  ? darkMode ? 'bg-[#212C3C] text-[#FFB074] shadow-sm' : 'bg-white text-[#FF7A1A] shadow-sm'
+                  : darkMode ? 'text-[#94A3B8] hover:text-[#F8FAFC]' : 'text-stone-500 hover:text-stone-800'
               }`}
             >
               <Lightbulb className="w-4 h-4" /> Submit Feedback (+10 XP)
@@ -193,8 +203,8 @@ export default function FeedbackWidget({
               onClick={() => setActiveTab('community')}
               className={`flex-1 py-2 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer ${
                 activeTab === 'community'
-                  ? 'bg-white dark:bg-stone-800 text-[#FF8A3D] shadow-sm'
-                  : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
+                  ? darkMode ? 'bg-[#212C3C] text-[#FFB074] shadow-sm' : 'bg-white text-[#FF7A1A] shadow-sm'
+                  : darkMode ? 'text-[#94A3B8] hover:text-[#F8FAFC]' : 'text-stone-500 hover:text-stone-800'
               }`}
             >
               <ThumbsUp className="w-4 h-4" /> Idea Wall ({ideas.length})
@@ -210,14 +220,16 @@ export default function FeedbackWidget({
                   animate={{ opacity: 1, scale: 1 }}
                   className="h-full flex flex-col items-center justify-center text-center p-6 space-y-4"
                 >
-                  <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-600 flex items-center justify-center">
+                  <div className={`w-16 h-16 rounded-full border flex items-center justify-center ${
+                    darkMode ? 'bg-emerald-950/40 border-emerald-800 text-emerald-400' : 'bg-emerald-100 border-emerald-200 text-emerald-600'
+                  }`}>
                     <CheckCircle2 className="w-8 h-8" />
                   </div>
                   <div>
-                    <h4 className="text-lg font-bold text-stone-800 dark:text-stone-100">
+                    <h4 className={`text-lg font-bold ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-800'}`}>
                       Feedback Submitted! 🎉
                     </h4>
-                    <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">
+                    <p className={`text-xs mt-1 ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'}`}>
                       Thank you for helping us improve Vicfungo. You earned <strong>+10 XP</strong>!
                     </p>
                   </div>
@@ -226,7 +238,7 @@ export default function FeedbackWidget({
                 <form onSubmit={handleSubmitFeedback} className="space-y-4">
                   {/* Rating selection */}
                   <div>
-                    <label className="text-xs font-bold text-stone-700 dark:text-stone-300 mb-1.5 block">
+                    <label className={`text-xs font-bold mb-1.5 block ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-700'}`}>
                       How would you rate your experience so far?
                     </label>
                     <div className="flex items-center gap-2">
@@ -236,13 +248,13 @@ export default function FeedbackWidget({
                           type="button"
                           onClick={() => setRating(star)}
                           className={`p-2 rounded-xl transition cursor-pointer ${
-                            rating >= star ? 'text-amber-400' : 'text-stone-300 dark:text-stone-700'
+                            rating >= star ? 'text-amber-400' : darkMode ? 'text-[#334255]' : 'text-stone-300'
                           }`}
                         >
                           <Star className="w-6 h-6 fill-current" />
                         </button>
                       ))}
-                      <span className="text-xs font-mono font-bold text-amber-500 ml-2">
+                      <span className="text-xs font-mono font-bold text-[#FF7A1A] ml-2">
                         {rating}/5
                       </span>
                     </div>
@@ -250,13 +262,17 @@ export default function FeedbackWidget({
 
                   {/* Category dropdown */}
                   <div>
-                    <label className="text-xs font-bold text-stone-700 dark:text-stone-300 mb-1.5 block">
+                    <label className={`text-xs font-bold mb-1.5 block ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-700'}`}>
                       Category
                     </label>
                     <select
                       value={category}
                       onChange={(e) => setCategory(e.target.value as any)}
-                      className="w-full px-3.5 py-2.5 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl text-xs font-medium text-stone-800 dark:text-stone-100 focus:outline-none focus:border-[#FF8A3D]"
+                      className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-medium focus:outline-none focus:border-[#FF7A1A] ${
+                        darkMode 
+                          ? 'bg-[#0F141C] border border-[#334255] text-[#F8FAFC]' 
+                          : 'bg-stone-50 border border-stone-200 text-stone-800'
+                      }`}
                     >
                       <option value="UI/UX Improvement">✨ UI/UX Improvement</option>
                       <option value="New Habit Feature">⚡ New Habit Feature</option>
@@ -268,7 +284,7 @@ export default function FeedbackWidget({
 
                   {/* Textarea */}
                   <div>
-                    <label className="text-xs font-bold text-stone-700 dark:text-stone-300 mb-1.5 block">
+                    <label className={`text-xs font-bold mb-1.5 block ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-700'}`}>
                       Your Suggestion or Feedback
                     </label>
                     <textarea
@@ -277,13 +293,17 @@ export default function FeedbackWidget({
                       value={message}
                       onChange={(e) => setMessage(e.target.value)}
                       placeholder="Share your thoughts, missing features, or navigation suggestions..."
-                      className="w-full px-3.5 py-2.5 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl text-xs text-stone-800 dark:text-stone-100 focus:outline-none focus:border-[#FF8A3D] resize-none"
+                      className={`w-full px-3.5 py-2.5 rounded-xl text-xs focus:outline-none focus:border-[#FF7A1A] resize-none ${
+                        darkMode 
+                          ? 'bg-[#0F141C] border border-[#334255] text-[#F8FAFC] placeholder-[#64748B]' 
+                          : 'bg-stone-50 border border-stone-200 text-stone-800 placeholder-stone-400'
+                      }`}
                     />
                   </div>
 
                   {/* Quick Tags */}
                   <div>
-                    <label className="text-[10px] font-bold text-stone-500 uppercase tracking-wider mb-1.5 block">
+                    <label className={`text-[10px] font-bold uppercase tracking-wider mb-1.5 block ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'}`}>
                       Quick Tags
                     </label>
                     <div className="flex flex-wrap gap-1.5">
@@ -296,8 +316,12 @@ export default function FeedbackWidget({
                             onClick={() => handleToggleTag(tag)}
                             className={`text-[11px] px-2.5 py-1 rounded-lg border font-medium transition cursor-pointer ${
                               isSelected
-                                ? 'bg-orange-50 dark:bg-orange-950/40 border-[#FF8A3D] text-[#FF8A3D]'
-                                : 'bg-stone-50 dark:bg-stone-800 border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-400 hover:border-stone-300'
+                                ? darkMode 
+                                  ? 'bg-[rgba(255,122,26,0.15)] border-[#FF7A1A] text-[#FFB074]' 
+                                  : 'bg-orange-50 border-[#FF7A1A] text-[#FF7A1A]'
+                                : darkMode 
+                                  ? 'bg-[#0F141C] border-[#334255] text-[#94A3B8] hover:border-[#FF7A1A]/50' 
+                                  : 'bg-stone-50 border-stone-200 text-stone-600 hover:border-stone-300'
                             }`}
                           >
                             #{tag}
@@ -309,7 +333,7 @@ export default function FeedbackWidget({
 
                   <button
                     type="submit"
-                    className="w-full py-3 bg-[#FF8A3D] hover:bg-[#e77a2f] text-white font-bold text-xs rounded-2xl shadow-premium-orange transition flex items-center justify-center gap-2 cursor-pointer pt-3 mt-4"
+                    className="w-full py-3 bg-[#FF7A1A] hover:bg-[#e76b13] text-white font-bold text-xs rounded-2xl shadow-premium-orange transition flex items-center justify-center gap-2 cursor-pointer pt-3 mt-4"
                   >
                     <Send className="w-4 h-4" /> Submit & Claim +10 XP
                   </button>
@@ -317,30 +341,34 @@ export default function FeedbackWidget({
               )
             ) : (
               <div className="space-y-3">
-                <p className="text-xs text-stone-500 dark:text-stone-400 mb-2">
+                <p className={`text-xs mb-2 ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'}`}>
                   Upvote suggestions submitted by other Vicfungo community members or view popular feedback:
                 </p>
 
-                {ideas.map((idea) => (
+                {ideas.map((idea, idx) => (
                   <div
-                    key={idea.id}
-                    className="p-4 bg-stone-50 dark:bg-stone-850 rounded-2xl border border-stone-200/80 dark:border-stone-800 space-y-2"
+                    key={`idea-${idea.id}-${idx}`}
+                    className={`p-4 rounded-2xl border space-y-2 ${
+                      darkMode ? 'bg-[#171F2A] border-[#334255]' : 'bg-stone-50 border-stone-200/80'
+                    }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold font-mono text-[#FF8A3D] bg-orange-50 dark:bg-orange-950/40 px-2 py-0.5 rounded">
+                      <span className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded border ${
+                        darkMode ? 'bg-[rgba(255,122,26,0.15)] text-[#FFB074] border-[rgba(255,122,26,0.35)]' : 'bg-orange-50 text-[#FF7A1A] border-orange-100'
+                      }`}>
                         {idea.category}
                       </span>
-                      <span className="text-[10px] text-stone-400 font-mono">
+                      <span className={`text-[10px] font-mono ${darkMode ? 'text-[#64748B]' : 'text-stone-400'}`}>
                         {idea.timestamp}
                       </span>
                     </div>
 
-                    <p className="text-xs text-stone-800 dark:text-stone-200 font-medium leading-relaxed">
+                    <p className={`text-xs font-medium leading-relaxed ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-800'}`}>
                       &ldquo;{idea.message}&rdquo;
                     </p>
 
-                    <div className="flex items-center justify-between pt-1 border-t border-stone-100 dark:border-stone-800">
-                      <span className="text-[10px] text-stone-500 italic">
+                    <div className={`flex items-center justify-between pt-1 border-t ${darkMode ? 'border-[#334255]' : 'border-stone-100'}`}>
+                      <span className={`text-[10px] italic ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'}`}>
                         By {idea.authorName}
                       </span>
 
@@ -349,8 +377,12 @@ export default function FeedbackWidget({
                         onClick={() => handleUpvoteIdea(idea.id)}
                         className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold transition flex items-center gap-1.5 cursor-pointer ${
                           idea.userUpvoted
-                            ? 'bg-orange-50 dark:bg-orange-950/40 border-[#FF8A3D] text-[#FF8A3D]'
-                            : 'bg-white dark:bg-stone-800 border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-300 hover:border-orange-300'
+                            ? darkMode
+                              ? 'bg-[rgba(255,122,26,0.15)] border-[#FF7A1A] text-[#FFB074]'
+                              : 'bg-orange-50 border-[#FF7A1A] text-[#FF7A1A]'
+                            : darkMode
+                              ? 'bg-[#1E2836] border-[#334255] text-[#94A3B8] hover:border-[#FF7A1A]/50 hover:text-[#F8FAFC]'
+                              : 'bg-white border-stone-200 text-stone-600 hover:border-orange-300'
                         }`}
                       >
                         <ThumbsUp className={`w-3.5 h-3.5 ${idea.userUpvoted ? 'fill-current' : ''}`} />

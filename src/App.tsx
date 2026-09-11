@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Sparkles, Brain, Home, BarChart3, Award, Smartphone, Settings as SettingsIcon, 
   Plus, Calendar, Flame, User, Check, Trophy, BookOpen, Clock, AlertCircle, Info,
-  ListTodo, Trash2, Sun, Moon, Beaker, Play, RotateCw, Smile, Feather, Droplets, Dumbbell, Timer, ChevronRight, Compass, MessageSquare
+  ListTodo, Trash2, Sun, Moon, Beaker, Play, RotateCw, Smile, Feather, Droplets, Dumbbell, Timer, ChevronRight, Compass, MessageSquare,
+  Shield, ShieldCheck, ShieldAlert, ArrowRight, X, Bell, BellRing
 } from 'lucide-react';
 
 import { UserProfile, UserStats, Habit, HabitRecord, HabitCategory, PsychologicalPrinciple, TodoTask, FirstDayQuest } from './types';
@@ -19,22 +20,67 @@ import IntelligentCalendar from './components/IntelligentCalendar';
 import InteractiveTourModal from './components/InteractiveTourModal';
 import FirstDayQuests from './components/FirstDayQuests';
 import FeedbackWidget from './components/FeedbackWidget';
+import ThemeToggle from './components/ThemeToggle';
+import Toast, { ToastData } from './components/Toast';
+import GraceShieldRecoveryModal from './components/GraceShieldRecoveryModal';
+import { 
+  checkAndDispatchDueReminders, 
+  parseTimeString, 
+  getNotificationPermission, 
+  requestNotificationPermission, 
+  fireBrowserNotification, 
+  saveScheduledAlarms 
+} from './utils/notifications';
 
-import { playSuccessSound, playCelebrationFanfareAndClaps } from './utils/audio';
+import { playSuccessSound, playCelebrationFanfareAndClaps, playNotificationAlertSound } from './utils/audio';
 import DopamineExplosion from './components/DopamineExplosion';
 import EducationalLoading from './components/EducationalLoading';
 import AcronymValidationModal from './components/AcronymValidationModal';
 import { validateTextInput } from './utils/wordValidator';
 
 export function deduplicateHabits(habitsList: Habit[]): Habit[] {
+  if (!Array.isArray(habitsList)) return [];
   const seenNames = new Set<string>();
-  return habitsList.filter(habit => {
+  const seenIds = new Set<string>();
+  const result: Habit[] = [];
+
+  for (let i = 0; i < habitsList.length; i++) {
+    const habit = habitsList[i];
+    if (!habit || !habit.name) continue;
     const normalizedName = habit.name.toLowerCase().trim();
     if (seenNames.has(normalizedName)) {
-      return false;
+      continue;
     }
     seenNames.add(normalizedName);
-    return true;
+
+    let uniqueId = habit.id;
+    if (!uniqueId || seenIds.has(uniqueId)) {
+      uniqueId = `habit-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}`;
+    }
+    seenIds.add(uniqueId);
+
+    result.push({
+      ...habit,
+      id: uniqueId
+    });
+  }
+
+  return result;
+}
+
+export function deduplicateTodos(todosList: TodoTask[]): TodoTask[] {
+  if (!Array.isArray(todosList)) return [];
+  const seenIds = new Set<string>();
+  return todosList.map((todo, idx) => {
+    let uniqueId = todo.id;
+    if (!uniqueId || seenIds.has(uniqueId)) {
+      uniqueId = `todo-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`;
+    }
+    seenIds.add(uniqueId);
+    return {
+      ...todo,
+      id: uniqueId
+    };
   });
 }
 
@@ -46,8 +92,49 @@ export default function App() {
   
   // Dark Mode Theme and Daily To-Do list state
   const [darkMode, setDarkMode] = useState<boolean>(() => {
-    return localStorage.getItem('vicfungo_dark_mode') === 'true';
+    const saved = localStorage.getItem('vicfungo_dark_mode');
+    if (saved !== null) {
+      return saved === 'true';
+    }
+    // Automatic system preference detection on first launch
+    if (typeof window !== 'undefined' && window.matchMedia) {
+      return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
+    return false;
   });
+
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    localStorage.setItem('vicfungo_dark_mode', String(darkMode));
+  }, [darkMode]);
+
+  // Listen to OS theme changes if user hasn't set a manual preference
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleThemeChange = (e: MediaQueryListEvent) => {
+      const hasManualOverride = localStorage.getItem('vicfungo_dark_mode_manual') === 'true';
+      if (!hasManualOverride) {
+        setDarkMode(e.matches);
+      }
+    };
+    mediaQuery.addEventListener('change', handleThemeChange);
+    return () => mediaQuery.removeEventListener('change', handleThemeChange);
+  }, []);
+
+  const handleToggleDarkMode = () => {
+    setDarkMode(prev => {
+      const next = !prev;
+      localStorage.setItem('vicfungo_dark_mode', String(next));
+      localStorage.setItem('vicfungo_dark_mode_manual', 'true');
+      return next;
+    });
+  };
+
   const [todos, setTodos] = useState<TodoTask[]>([]);
   
   // App Time Coordination (YYYY-MM-DD)
@@ -61,10 +148,53 @@ export default function App() {
   const [newHabitName, setNewHabitName] = useState<string>('');
   const [newHabitTrigger, setNewHabitTrigger] = useState<string>('');
   const [newHabitCategory, setNewHabitCategory] = useState<HabitCategory>('productivity');
-  const [newHabitPrinciple, setNewHabitPrinciple] = useState<PsychologicalPrinciple>('Habit Stacking');
   const [newHabitDifficulty, setNewHabitDifficulty] = useState<'easy' | 'medium' | 'hard'>('easy');
   const [newHabitReminder, setNewHabitReminder] = useState<string>('08:00');
   const [newHabitDesc, setNewHabitDesc] = useState<string>('');
+
+  // Browser Notification Permission State
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>(() => {
+    return getNotificationPermission();
+  });
+
+  const handleAllowSystemAlerts = () => {
+    if ('Notification' in window) {
+      Notification.requestPermission().then(permission => {
+        setNotificationPermission(permission);
+        if (permission === 'granted') {
+          new Notification('Vicfungo Enabled! 🚀', {
+            body: 'System notifications are active. You will receive habit nudges directly on your device.',
+            icon: '/favicon.ico'
+          });
+          playSuccessSound();
+          showToast('Vicfungo Enabled! 🚀', 'System notifications are active. You will receive habit nudges directly on your device.', 'success');
+        } else if (permission === 'denied') {
+          showToast('System Alerts Denied', 'Browser notifications are restricted in your browser settings. In-app audio and toast alerts remain active!', 'warning');
+        } else {
+          showToast('In-App Alerts Active 🔔', 'In-app audio chimes and toast banners will alert you when habit windows open.', 'info');
+        }
+      });
+    } else {
+      showToast('Notifications Unsupported', 'Your browser does not support system notifications. In-app audio and toast alerts are active.', 'warning');
+    }
+  };
+
+  const handleTriggerTestAlert = () => {
+    playNotificationAlertSound();
+    if ('Notification' in window && Notification.permission === 'granted') {
+      try {
+        new Notification('⏰ Vicfungo Habit Alert', {
+          body: 'Time to complete your contract: Test Habit Contract',
+          icon: '/favicon.ico',
+          tag: 'vicfungo-test-habit-alert',
+          requireInteraction: true
+        });
+      } catch (e) {
+        console.warn('Test notification error:', e);
+      }
+    }
+    showToast('⏰ Vicfungo Habit Alert', 'Time to complete your contract: Test Habit Contract (In-app companion toast active)', 'warning');
+  };
 
   // Acronym Validation State
   const [confirmedAcronyms, setConfirmedAcronyms] = useState<Set<string>>(new Set());
@@ -110,6 +240,21 @@ export default function App() {
   } | null>(null);
   const [customSplashIntensity, setCustomSplashIntensity] = useState<number>(45); // number of particles in custom splash
   const [customSplashColor, setCustomSplashColor] = useState<string>('mixed'); // custom color theme for playground
+
+  // Grace Shield and Notifications State
+  const [showShieldTooltip, setShowShieldTooltip] = useState<boolean>(false);
+  const [isRecoveryModalOpen, setIsRecoveryModalOpen] = useState<boolean>(false);
+  const [isSimulatedRisk, setIsSimulatedRisk] = useState<boolean>(false);
+  const [toast, setToast] = useState<ToastData | null>(null);
+
+  const showToast = (title: string, message: string, type: 'success' | 'warning' | 'info' = 'success') => {
+    setToast({
+      id: Date.now().toString(),
+      title,
+      message,
+      type
+    });
+  };
 
   // Dynamic, motivational message that rotates based on user stats, streaks, time of day, or activity.
   const [motivationalMessage, setMotivationalMessage] = useState<string>('');
@@ -191,6 +336,9 @@ export default function App() {
     if (cachedProfile && cachedStats) {
       initialProfile = JSON.parse(cachedProfile);
       initialStats = JSON.parse(cachedStats);
+      if (initialStats && initialStats.graceShieldAvailable === undefined && !initialStats.graceShieldLastUsedDate) {
+        initialStats.graceShieldAvailable = true;
+      }
       setProfile(initialProfile);
       setStats(initialStats);
     }
@@ -203,7 +351,9 @@ export default function App() {
     }
     
     if (cachedTodos) {
-      setTodos(JSON.parse(cachedTodos));
+      const cleanTodos = deduplicateTodos(JSON.parse(cachedTodos));
+      setTodos(cleanTodos);
+      localStorage.setItem('vicfungo_todos', JSON.stringify(cleanTodos));
     } else {
       setTodos([]);
       localStorage.setItem('vicfungo_todos', JSON.stringify([]));
@@ -274,9 +424,44 @@ export default function App() {
     }
   }, []);
 
+  // Automated background reminder dispatcher and scheduler
+  useEffect(() => {
+    if (!habits || habits.length === 0) return;
+
+    // Persist all scheduled alarms to localStorage across tabs and sessions
+    saveScheduledAlarms(habits);
+
+    const triggerAlarm = (title: string, message: string) => {
+      playNotificationAlertSound();
+      showToast(title, message, 'warning');
+    };
+
+    // Run check immediately on mount or dashboard visit
+    checkAndDispatchDueReminders(habits, triggerAlarm);
+
+    // Active background check loop (every 30 seconds) comparing local device time with reminder times
+    const interval = setInterval(() => {
+      checkAndDispatchDueReminders(habits, triggerAlarm);
+    }, 30000);
+
+    // Also check immediately when user switches tabs back to this tab
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        checkAndDispatchDueReminders(habits, triggerAlarm);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [habits]);
+
   const saveTodos = (newTodos: TodoTask[]) => {
-    setTodos(newTodos);
-    localStorage.setItem('vicfungo_todos', JSON.stringify(newTodos));
+    const cleanTodos = deduplicateTodos(newTodos);
+    setTodos(cleanTodos);
+    localStorage.setItem('vicfungo_todos', JSON.stringify(cleanTodos));
   };
 
   const handleToggleTodo = (todoId: string) => {
@@ -331,12 +516,6 @@ export default function App() {
     saveTodos(todos.filter(t => t.id !== todoId));
   };
 
-  const handleToggleDarkMode = () => {
-    const nextVal = !darkMode;
-    setDarkMode(nextVal);
-    localStorage.setItem('vicfungo_dark_mode', String(nextVal));
-  };
-
   // Write changes to local storage whenever state changes
   const saveState = (newProfile: UserProfile, newStats: UserStats, newHabits: Habit[]) => {
     const cleanHabits = deduplicateHabits(newHabits);
@@ -348,10 +527,172 @@ export default function App() {
     localStorage.setItem('vicfungo_habits', JSON.stringify(cleanHabits));
   };
 
-  const handleOnboardingComplete = (newProfile: UserProfile, newStats: UserStats) => {
-    saveState(newProfile, newStats, habits);
+  // Grace Shield status and cooldown computation
+  const getShieldStatus = () => {
+    if (!stats) {
+      return {
+        isAvailable: true,
+        cooldownDaysRemaining: 0,
+        tooltip: 'Grace Shield Ready (Protects 1 missed day per week)'
+      };
+    }
+
+    if (stats.graceShieldLastUsedDate) {
+      const today = new Date();
+      const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+      const usedDate = new Date(stats.graceShieldLastUsedDate);
+      const usedMidnight = new Date(usedDate.getFullYear(), usedDate.getMonth(), usedDate.getDate()).getTime();
+      const diffDays = Math.max(0, Math.floor((todayMidnight - usedMidnight) / (1000 * 60 * 60 * 24)));
+
+      if (diffDays < 7) {
+        const remaining = 7 - diffDays;
+        return {
+          isAvailable: false,
+          cooldownDaysRemaining: remaining,
+          tooltip: `Shield on Cooldown (Recharges in ${remaining} ${remaining === 1 ? 'day' : 'days'})`
+        };
+      }
+    }
+
+    if (stats.graceShieldAvailable === false && !stats.graceShieldLastUsedDate) {
+      return {
+        isAvailable: false,
+        cooldownDaysRemaining: 7,
+        tooltip: 'Shield on Cooldown (Recharges in 7 days)'
+      };
+    }
+
+    return {
+      isAvailable: true,
+      cooldownDaysRemaining: 0,
+      tooltip: 'Grace Shield Ready (Protects 1 missed day per week)'
+    };
+  };
+
+  const shieldStatus = getShieldStatus();
+
+  // Check if yesterday was missed to display danger warning
+  const checkYesterdayMissed = () => {
+    if (!stats) return false;
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    const todayStr = today.toISOString().split('T')[0];
+
+    // If shield was used today or yesterday
+    if (stats.graceShieldLastUsedDate === yesterdayStr || stats.graceShieldLastUsedDate === todayStr) {
+      return false;
+    }
+
+    // Check if any active habit was completed yesterday
+    const completedYesterday = habits.some(h => !h.isArchived && h.records && h.records[yesterdayStr]?.completed);
+    if (completedYesterday) {
+      return false;
+    }
+
+    // If user has an active streak or last active date is prior to yesterday
+    if (stats.streakDays > 0 && stats.lastActiveDate !== yesterdayStr && stats.lastActiveDate !== todayStr) {
+      return true;
+    }
+
+    return false;
+  };
+
+  const isStreakAtRisk = (checkYesterdayMissed() || isSimulatedRisk) && shieldStatus.isAvailable;
+
+  const handleCompleteRecoveryMission = (friction: string, microAction: string) => {
+    if (!stats || !profile) return;
+
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+    // Mark active habits for yesterday as shielded/completed so streak is unbroken
+    const updatedHabits = habits.map(h => {
+      if (h.isArchived) return h;
+      return {
+        ...h,
+        records: {
+          ...h.records,
+          [yesterdayStr]: {
+            date: yesterdayStr,
+            completed: true,
+            notes: `Shielded via Recovery: ${friction}`,
+            reflectionAnswer: microAction
+          }
+        }
+      };
+    });
+
+    const preservedStreak = Math.max(stats.streakDays, 1);
+
+    const updatedStats: UserStats = {
+      ...stats,
+      streakDays: preservedStreak,
+      graceShieldAvailable: false,
+      graceShieldLastUsedDate: todayStr,
+      lastActiveDate: todayStr
+    };
+
+    saveState(profile, updatedStats, updatedHabits);
+    setIsSimulatedRisk(false);
+    setIsRecoveryModalOpen(false);
+    playCelebrationFanfareAndClaps();
+
+    // Trigger in-app toast notification confirming the streak is preserved
+    showToast(
+      'Streak Preserved! 🛡️',
+      'Your Grace Shield was activated and your streak is safe. Shield cooldown: 7 days.',
+      'success'
+    );
+  };
+
+  const handleOnboardingComplete = (newProfile: UserProfile, newStats: UserStats, initialHabit?: Habit) => {
+    let nextHabits = habits;
+    if (initialHabit) {
+      nextHabits = [initialHabit, ...habits.filter(h => h.id !== initialHabit.id)];
+      setHabits(nextHabits);
+    }
+    saveState(newProfile, newStats, nextHabits);
     setMotivationalMessage(generateMotivationalMessage(newProfile, newStats));
     setIsTourModalOpen(true);
+  };
+
+  const handleRescheduleHabit = (habitId: string, newTime: string) => {
+    const updatedHabits = habits.map(h => {
+      if (h.id === habitId) {
+        return {
+          ...h,
+          reminderTime: newTime,
+          reminderEnabled: true
+        };
+      }
+      return h;
+    });
+
+    setHabits(updatedHabits);
+    if (profile && stats) {
+      saveState(profile, stats, updatedHabits);
+    } else {
+      localStorage.setItem('vicfungo_habits', JSON.stringify(updatedHabits));
+    }
+
+    // Reset notification trigger for this habit so new time will fire
+    Object.keys(localStorage).forEach(key => {
+      if (key.startsWith(`vicfungo_notified_${habitId}_`)) {
+        localStorage.removeItem(key);
+      }
+    });
+
+    const parsed = parseTimeString(newTime);
+    showToast(
+      'Schedule Updated ⏰',
+      `Habit active window shifted to ${parsed.formatted}. Notifications will trigger at the new time.`,
+      'info'
+    );
   };
 
   const handleCompleteTour = (xpBonus: number) => {
@@ -615,7 +956,7 @@ export default function App() {
 
     executeWithWordValidation(`${newHabitName} ${newHabitTrigger}`, () => {
       // Build descriptions automatically with stack formulation
-      const compiledDesc = newHabitDesc.trim() || `After I ${newHabitTrigger}, I will ${newHabitName}. Powered by ${newHabitPrinciple}.`;
+      const compiledDesc = newHabitDesc.trim() || `After I ${newHabitTrigger}, I will ${newHabitName}.`;
 
       // Map difficulty to custom XP values
       const xpRewardMap = { easy: 30, medium: 45, hard: 60 };
@@ -628,7 +969,7 @@ export default function App() {
         frequency: 'daily',
         targetDaysCount: 1,
         description: compiledDesc,
-        psychologicalPrinciple: newHabitPrinciple,
+        psychologicalPrinciple: 'Habit Stacking',
         difficulty: newHabitDifficulty,
         xpReward: xpVal,
         reminderTime: newHabitReminder,
@@ -780,7 +1121,13 @@ export default function App() {
 
   // If profile is null, render the Onboarding quiz view
   if (!profile || !stats) {
-    return <Onboarding onComplete={handleOnboardingComplete} />;
+    return (
+      <Onboarding 
+        onComplete={handleOnboardingComplete} 
+        darkMode={darkMode}
+        onToggleDarkMode={handleToggleDarkMode}
+      />
+    );
   }
 
   // Active view filters
@@ -819,38 +1166,40 @@ export default function App() {
 
   return (
     <div id="app-root" className={`min-h-screen ${
-      darkMode ? 'bg-stone-950 text-stone-100' : 'bg-[#FEFAF7] text-stone-800'
+      darkMode ? 'bg-[#0F141C] text-[#F8FAFC]' : 'bg-[#FEFAF7] text-stone-800'
     } flex flex-col md:flex-row font-sans selection:bg-orange-100 selection:text-orange-900 transition-colors duration-300`}>
       
       {/* Sidebar Navigation */}
       <aside className={`w-full md:w-64 ${
-        darkMode ? 'bg-stone-900/90 border-stone-850 text-stone-100' : 'bg-white border-stone-100'
+        darkMode ? 'bg-[#171F2A] border-[#263242] text-[#F8FAFC]' : 'bg-white border-stone-100'
       } border-b md:border-b-0 md:border-r flex flex-col justify-between shrink-0 z-20 shadow-sm transition-colors duration-300`}>
         <div>
           {/* Brand Logo */}
-          <div className={`p-6 border-b ${darkMode ? 'border-stone-800' : 'border-stone-100'} flex items-center justify-between`}>
-            <div className="flex items-center gap-2">
-              <div className="w-9 h-9 bg-[#FF8A3D] rounded-xl flex items-center justify-center shadow-lg shadow-orange-100/50 text-white">
+          <div className={`p-6 border-b ${darkMode ? 'border-[#263242]' : 'border-stone-100'} flex items-center justify-between`}>
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 bg-gradient-to-br from-[#FF7A1A] to-[#F59E0B] rounded-xl flex items-center justify-center shadow-md shadow-orange-500/20 text-white">
                 <Brain className="w-5 h-5 text-white" />
               </div>
-              <span className={`font-display font-extrabold text-xl ${darkMode ? 'text-stone-100' : 'text-stone-900'} tracking-tight`}>Vicfungo</span>
+              <span className={`font-display font-extrabold text-xl ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-900'} tracking-tight`}>
+                Vicfungo
+              </span>
             </div>
             
             {profile.isPro && (
-              <span className="text-[9px] bg-orange-100 text-[#FF8A3D] font-bold font-mono px-1.5 py-0.5 rounded-full uppercase tracking-wider">PRO</span>
+              <span className="text-[9px] bg-gradient-to-r from-[#FF7A1A] to-[#F59E0B] text-white font-bold font-mono px-2 py-0.5 rounded-full uppercase tracking-wider shadow-xs">PRO</span>
             )}
           </div>
 
           {/* Quick User Identity Summary */}
-          <div className={`p-4 mx-2 my-3 ${
-            darkMode ? 'bg-stone-800/50 border-stone-800' : 'bg-[#F5F1EE] border-stone-100'
-          } rounded-[24px] flex items-center gap-3 border transition-colors`}>
-            <div className="w-10 h-10 rounded-xl bg-orange-100 text-[#FF8A3D] font-bold font-display flex items-center justify-center shadow-sm shrink-0">
+          <div className={`p-4 mx-3 my-3 ${
+            darkMode ? 'bg-[#1E2836] border-[#334255]' : 'bg-gradient-to-r from-stone-50 to-orange-50/30 border-stone-200/70'
+          } rounded-[24px] flex items-center gap-3 border transition-colors shadow-xs`}>
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-100 to-amber-100 text-orange-600 font-bold font-display flex items-center justify-center shadow-xs shrink-0 border border-orange-200/60">
               {profile.name.charAt(0).toUpperCase()}
             </div>
             <div className="min-w-0">
-              <h4 className={`font-bold ${darkMode ? 'text-stone-100' : 'text-stone-800'} text-xs truncate`}>{profile.name}</h4>
-              <span className="text-[10px] text-stone-500 font-medium block truncate">Lvl {stats.level} Archetype</span>
+              <h4 className={`font-bold ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-900'} text-xs truncate`}>{profile.name}</h4>
+              <span className={`text-[10px] ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'} font-medium block truncate`}>Lvl {stats.level} Archetype</span>
             </div>
           </div>
 
@@ -873,11 +1222,11 @@ export default function App() {
                   onClick={() => setCurrentView(item.id as any)}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition cursor-pointer ${
                     isActive 
-                      ? (darkMode ? 'bg-stone-800 border border-stone-700 text-[#FF8A3D]' : 'bg-[#FEFAF7] border border-orange-100 text-[#FF8A3D]')
-                      : `text-stone-500 hover:${darkMode ? 'bg-stone-800/40 text-stone-100' : 'bg-[#F5F1EE] text-stone-900'}`
+                      ? (darkMode ? 'bg-[rgba(255,122,26,0.15)] border border-[rgba(255,122,26,0.35)] text-[#FFB074] font-bold shadow-xs' : 'bg-gradient-to-r from-orange-50 to-amber-50/60 border border-orange-200 text-orange-700 font-bold shadow-xs')
+                      : `text-stone-600 dark:text-[#94A3B8] hover:${darkMode ? 'bg-[#1E2836] text-[#F8FAFC]' : 'bg-stone-100/70 text-stone-900'}`
                   }`}
                 >
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-[#FF8A3D]' : 'text-stone-400'}`} />
+                  <Icon className={`w-4 h-4 ${isActive ? 'text-[#FF7A1A]' : 'text-stone-400 dark:text-[#94A3B8]'}`} />
                   {item.label}
                 </button>
               );
@@ -888,16 +1237,16 @@ export default function App() {
         {/* Pro Upgrader Footer banner */}
         {!profile.isPro && (
           <div className={`p-4 m-4 ${
-            darkMode ? 'bg-stone-800/40 border-stone-800' : 'bg-[#FEFAF7] border-orange-100'
-          } border rounded-[24px] transition-colors`}>
-            <span className="text-[9px] text-[#FF8A3D] font-bold block uppercase tracking-wider mb-1">UNLOCK COGNITIVE COUPLING</span>
-            <p className={`text-[10px] ${darkMode ? 'text-stone-400' : 'text-stone-600'} leading-normal`}>
+            darkMode ? 'bg-[#1E2836] border-[#334255]' : 'bg-gradient-to-br from-orange-50/60 to-amber-50/40 border-orange-200/80'
+          } border rounded-[24px] transition-colors shadow-xs`}>
+            <span className="text-[9px] text-[#FF7A1A] font-bold block uppercase tracking-wider mb-1">UNLOCK COGNITIVE COUPLING</span>
+            <p className={`text-[10px] ${darkMode ? 'text-[#94A3B8]' : 'text-stone-600'} leading-normal`}>
               Acquire full access to unlimited Dr. Gethro prescriptions.
             </p>
             <button
               id="sidebar-btn-upgrade"
               onClick={() => setCurrentView('settings')}
-              className="mt-3 w-full py-2 bg-[#FF8A3D] hover:bg-[#e77a2f] text-white text-xs font-bold rounded-2xl transition shadow-premium-orange cursor-pointer"
+              className="mt-3 w-full py-2 bg-gradient-to-r from-[#FF7A1A] to-[#F59E0B] hover:from-[#e76b13] hover:to-[#d98206] text-white text-xs font-bold rounded-2xl transition shadow-premium-orange cursor-pointer active:scale-[0.98]"
             >
               Go Pro
             </button>
@@ -910,11 +1259,11 @@ export default function App() {
         
         {/* Universal Subheader with calendar status node */}
         <header className={`${
-          darkMode ? 'bg-stone-900 border-stone-850 text-stone-100' : 'bg-white border-stone-100 text-stone-800'
+          darkMode ? 'bg-[#171F2A] border-[#263242] text-[#F8FAFC]' : 'bg-white border-stone-100 text-stone-800'
         } p-4 sm:p-6 border-b flex items-center justify-between flex-wrap gap-4 z-10 shrink-0 transition-colors duration-300`}>
           <div>
-            <span className="text-[10px] text-[#FF8A3D] font-bold font-mono tracking-wider uppercase bg-orange-50 dark:bg-orange-950/20 px-2 py-0.5 rounded">BIOLOGICAL HABIT CYCLE</span>
-            <h1 className={`text-xl font-display font-extrabold ${darkMode ? 'text-stone-100' : 'text-stone-900'} mt-1 tracking-tight`}>
+            <span className="text-[10px] text-orange-700 dark:text-[#FFB074] font-bold font-mono tracking-wider uppercase bg-orange-50 dark:bg-[rgba(255,122,26,0.15)] border border-orange-200 dark:border-[rgba(255,122,26,0.35)] px-2 py-0.5 rounded">BIOLOGICAL HABIT CYCLE</span>
+            <h1 className={`text-xl font-display font-extrabold ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-900'} mt-1 tracking-tight`}>
               {currentView === 'dashboard' && 'Growth Dashboard'}
               {currentView === 'coach' && 'Dr. Gethro AI Growth Coach'}
               {currentView === 'analytics' && 'Growth Diagnostics'}
@@ -931,8 +1280,8 @@ export default function App() {
               onClick={() => setIsFeedbackModalOpen(true)}
               className={`px-3 py-1.5 rounded-xl border font-bold text-xs transition flex items-center gap-1.5 cursor-pointer ${
                 darkMode 
-                  ? 'bg-amber-950/30 border-amber-800/60 text-amber-400 hover:bg-amber-900/40' 
-                  : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
+                  ? 'bg-[rgba(245,158,11,0.15)] border-[rgba(245,158,11,0.35)] text-[#FCD34D] hover:bg-[rgba(245,158,11,0.25)]' 
+                  : 'bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100'
               }`}
               title="Feedback & Community Ideas"
             >
@@ -946,8 +1295,8 @@ export default function App() {
               onClick={() => setIsTourModalOpen(true)}
               className={`px-3 py-1.5 rounded-xl border font-bold text-xs transition flex items-center gap-1.5 cursor-pointer ${
                 darkMode 
-                  ? 'bg-orange-950/30 border-orange-800/60 text-[#FF8A3D] hover:bg-orange-900/40' 
-                  : 'bg-orange-50 border-orange-200 text-[#FF8A3D] hover:bg-orange-100'
+                  ? 'bg-[rgba(255,122,26,0.15)] border-[rgba(255,122,26,0.35)] text-[#FFB074] hover:bg-[rgba(255,122,26,0.25)]' 
+                  : 'bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100'
               }`}
               title="Replay Interactive Tour"
             >
@@ -961,8 +1310,8 @@ export default function App() {
               onClick={() => setShowRelaunchConfirmModal(true)}
               className={`px-3 py-1.5 rounded-xl border font-bold text-xs transition flex items-center gap-1.5 cursor-pointer ${
                 darkMode 
-                  ? 'bg-rose-950/30 border-rose-800/60 text-rose-400 hover:bg-rose-900/40' 
-                  : 'bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100'
+                  ? 'bg-[rgba(239,68,68,0.15)] border-[rgba(239,68,68,0.35)] text-[#FCA5A5] hover:bg-[rgba(239,68,68,0.25)]' 
+                  : 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100'
               }`}
               title="Relaunch as New User (Reset Onboarding)"
             >
@@ -970,35 +1319,148 @@ export default function App() {
               <span className="hidden md:inline">Relaunch App</span>
             </button>
 
-            {/* Dark Mode toggle in the main header as an alternative option */}
+            {/* Dedicated High-Visibility System Alerts Button */}
             <button
-              id="btn-header-toggle-dark"
-              onClick={handleToggleDarkMode}
-              className={`p-2 rounded-xl border transition cursor-pointer ${
-                darkMode 
-                  ? 'bg-stone-800 border-stone-700 text-amber-400 hover:bg-stone-700' 
-                  : 'bg-stone-50 border-stone-200 text-stone-500 hover:bg-stone-100'
+              id="btn-topbar-allow-alerts"
+              type="button"
+              onClick={handleAllowSystemAlerts}
+              className={`px-3 py-1.5 rounded-xl border font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer shrink-0 shadow-xs active:scale-95 ${
+                notificationPermission === 'granted'
+                  ? darkMode
+                    ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/50'
+                    : 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'
+                  : 'bg-gradient-to-r from-[#EA580C] to-[#FF7A1A] hover:from-orange-600 hover:to-orange-500 text-white border-orange-400/50 shadow-premium-orange'
               }`}
-              title={darkMode ? "Switch to Light Theme" : "Switch to Dark Theme"}
+              title={notificationPermission === 'granted' ? 'System notifications are active on your device' : 'Click to enable native OS alerts outside the browser'}
             >
-              {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              {notificationPermission === 'granted' ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                  <span className="hidden sm:inline">🔔 Alerts Active</span>
+                  <span className="sm:hidden">🔔 Active</span>
+                </>
+              ) : (
+                <>
+                  <span>🔔 Allow System Alerts</span>
+                </>
+              )}
             </button>
+
+            {/* Prominent Light / Dark theme toggle switch with sun/moon icons */}
+            <ThemeToggle 
+              darkMode={darkMode} 
+              onToggle={handleToggleDarkMode} 
+              className="shrink-0"
+            />
 
             {/* XP progress bar bubble */}
             <div className={`px-3 py-1.5 ${
-              darkMode ? 'bg-stone-800 border-stone-750' : 'bg-[#F5F1EE] border-stone-100'
+              darkMode ? 'bg-[#1E2836] border-[#334255]' : 'bg-[#F5F1EE] border-stone-100'
             } border rounded-xl flex items-center gap-2`}>
-              <span className="text-xs font-mono font-bold text-orange-500">Lvl {stats.level}</span>
-              <div className="w-16 bg-stone-200 dark:bg-stone-700 h-1.5 rounded-full overflow-hidden">
-                <div className="h-full bg-[#FF8A3D]" style={{ width: `${(stats.xp % 500) / 5}%` }} />
+              <span className="text-xs font-mono font-bold text-[#FF7A1A]">Lvl {stats.level}</span>
+              <div className="w-16 bg-stone-200 dark:bg-[#0F141C] h-1.5 rounded-full overflow-hidden">
+                <div className="h-full bg-[#FF7A1A]" style={{ width: `${(stats.xp % 500) / 5}%` }} />
               </div>
             </div>
 
-            {stats.streakDays > 0 && (
-              <div className="bg-red-50 dark:bg-red-950/20 text-red-600 border border-red-100 dark:border-red-900/30 px-3 py-1.5 rounded-xl font-mono font-bold text-xs flex items-center gap-1 shrink-0">
-                <Flame className="w-4 h-4 fill-current" /> {stats.streakDays}d Streak
-              </div>
-            )}
+            {/* Streak Flame Counter */}
+            <div 
+              id="header-streak-counter"
+              className="bg-red-50 dark:bg-[rgba(239,68,68,0.15)] text-red-700 dark:text-[#FCA5A5] border border-red-200 dark:border-[rgba(239,68,68,0.35)] px-3 py-1.5 rounded-xl font-mono font-bold text-xs flex items-center gap-1 shrink-0"
+              title={`${stats.streakDays}-day streak`}
+            >
+              <Flame className={`w-4 h-4 ${stats.streakDays > 0 ? 'fill-current text-red-500' : 'text-red-400'}`} /> {stats.streakDays}d Streak
+            </div>
+
+            {/* Grace Shield directly beside Streak Flame counter */}
+            <div className="relative shrink-0" id="grace-shield-header-container">
+              <button
+                id="grace-shield-header-btn"
+                type="button"
+                onClick={() => setShowShieldTooltip(prev => !prev)}
+                onMouseEnter={() => setShowShieldTooltip(true)}
+                onMouseLeave={() => setShowShieldTooltip(false)}
+                className={`px-2.5 py-1 rounded-xl border flex flex-col items-center justify-center transition-all cursor-pointer select-none group min-w-[44px] ${
+                  shieldStatus.isAvailable
+                    ? darkMode
+                      ? 'bg-emerald-950/50 border-emerald-500/50 text-emerald-300 hover:bg-emerald-900/60 shadow-xs'
+                      : 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100 shadow-xs'
+                    : darkMode
+                      ? 'bg-[#1E2836] border-[#334255] text-amber-300 hover:bg-[#263242]'
+                      : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
+                }`}
+                title={shieldStatus.tooltip}
+                aria-label="Grace Shield status"
+              >
+                <Shield className={`w-3.5 h-3.5 ${
+                  shieldStatus.isAvailable 
+                    ? 'fill-emerald-500/25 stroke-current' 
+                    : 'stroke-current'
+                }`} />
+                {/* Remaining cooldown days directly under the shield icon */}
+                <span className="text-[9px] font-mono font-bold leading-none mt-0.5 tracking-tight">
+                  {shieldStatus.isAvailable ? 'Ready' : `${shieldStatus.cooldownDaysRemaining}d`}
+                </span>
+              </button>
+
+              {/* Tooltip on hover/tap */}
+              <AnimatePresence>
+                {showShieldTooltip && (
+                  <motion.div
+                    id="grace-shield-tooltip-popover"
+                    initial={{ opacity: 0, y: 6, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 6, scale: 0.95 }}
+                    transition={{ duration: 0.15 }}
+                    className={`absolute right-0 top-full mt-2 w-64 p-3.5 rounded-2xl border shadow-xl z-50 text-left ${
+                      darkMode ? 'bg-[#171F2A] border-[#334255] text-[#F8FAFC]' : 'bg-white border-stone-200 text-stone-900'
+                    }`}
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <div className={`p-1.5 rounded-xl shrink-0 ${
+                        shieldStatus.isAvailable
+                          ? 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-300'
+                          : 'bg-amber-100 dark:bg-amber-950/70 text-amber-600 dark:text-amber-300'
+                      }`}>
+                        {shieldStatus.isAvailable ? <ShieldCheck className="w-4 h-4" /> : <ShieldAlert className="w-4 h-4" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-bold font-display flex items-center justify-between">
+                          <span>{shieldStatus.isAvailable ? 'Grace Shield' : 'Grace Shield Cooldown'}</span>
+                          <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded ${
+                            shieldStatus.isAvailable 
+                              ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' 
+                              : 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                          }`}>
+                            {shieldStatus.isAvailable ? 'ACTIVE' : `${shieldStatus.cooldownDaysRemaining}d LEFT`}
+                          </span>
+                        </div>
+                        <p className={`text-xs mt-1 leading-snug font-medium ${darkMode ? 'text-[#CBD5E1]' : 'text-stone-700'}`}>
+                          {shieldStatus.tooltip}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 pt-2.5 border-t border-stone-100 dark:border-[#263242] flex items-center justify-between text-[10px]">
+                      <span className={`${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'} font-mono`}>
+                        {shieldStatus.isAvailable ? 'Protects 1 missed day/wk' : `Recharging in ${shieldStatus.cooldownDaysRemaining}d`}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsSimulatedRisk(prev => !prev);
+                          setShowShieldTooltip(false);
+                        }}
+                        className="text-[#EA580C] dark:text-[#FB923C] font-semibold hover:underline cursor-pointer"
+                      >
+                        {isSimulatedRisk ? 'Reset Risk Test' : 'Test Streak Risk'}
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
         </header>
 
@@ -1008,14 +1470,14 @@ export default function App() {
           {/* Welcome Banner space as requested: "Hey, (username), you are doing Great." */}
           <div className={`mb-6 p-6 rounded-[32px] border ${
             darkMode 
-              ? 'bg-gradient-to-r from-orange-950/20 to-stone-900 border-stone-800 text-stone-100 shadow-premium-dark' 
+              ? 'bg-gradient-to-r from-[rgba(255,122,26,0.1)] to-[#171F2A] border-[#263242] text-[#F8FAFC] shadow-premium-dark' 
               : 'bg-gradient-to-r from-orange-50 to-white border-orange-100/60 text-stone-800 shadow-premium'
           } relative overflow-hidden flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4`} id="welcome-banner-node">
             <div className="absolute right-0 top-0 w-32 h-32 bg-orange-100/10 rounded-full blur-2xl pointer-events-none" />
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-1.5">
-                <Sparkles className="w-4 h-4 text-[#FF8A3D] animate-pulse" />
-                <span className="text-[10px] font-mono font-bold text-orange-500 uppercase tracking-wider">DAILY AFFIRMATION PATHWAY</span>
+                <Sparkles className="w-4 h-4 text-[#FF7A1A] animate-pulse" />
+                <span className="text-[10px] font-mono font-bold text-[#FF7A1A] uppercase tracking-wider">DAILY AFFIRMATION PATHWAY</span>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-xl font-display font-extrabold tracking-tight">
@@ -1025,7 +1487,7 @@ export default function App() {
                   onClick={() => setMotivationalMessage(generateMotivationalMessage(profile, stats))}
                   className={`p-1 rounded-lg border transition-all cursor-pointer flex items-center justify-center ${
                     darkMode 
-                      ? 'border-stone-800 text-stone-400 hover:text-orange-500 hover:bg-orange-500/10' 
+                      ? 'border-[#263242] text-[#94A3B8] hover:text-[#FF7A1A] hover:bg-[rgba(255,122,26,0.15)]' 
                       : 'border-orange-150 text-stone-500 hover:text-[#FF8A3D] hover:bg-[#FF8A3D]/5'
                   }`}
                   title="Rotate motivation message"
@@ -1033,18 +1495,18 @@ export default function App() {
                   <RotateCw className="w-3 h-3" />
                 </button>
               </div>
-              <p className={`text-xs ${darkMode ? 'text-stone-400' : 'text-stone-500'} mt-1`}>
+              <p className={`text-xs ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'} mt-1`}>
                 Your daily habit stacks are synced. Dr. Gethro encourages logging actions to anchor your identity shift.
               </p>
               {profile?.identityAnchor && (
-                <div className="mt-3.5 inline-flex items-center gap-2 px-3 py-1.5 bg-orange-500/5 dark:bg-orange-500/10 rounded-xl border border-orange-200/10 dark:border-orange-500/20 text-xs text-orange-600 dark:text-orange-400">
-                  <span className="font-bold text-[9px] uppercase font-mono tracking-wider bg-orange-100 dark:bg-orange-950/30 px-1.5 py-0.5 rounded">Identity</span>
-                  <span className="italic font-semibold text-stone-750 dark:text-stone-300">&ldquo;{profile.identityAnchor}&rdquo;</span>
+                <div className="mt-3.5 inline-flex items-center gap-2 px-3 py-1.5 bg-orange-500/5 dark:bg-[rgba(255,122,26,0.15)] rounded-xl border border-orange-200/10 dark:border-[rgba(255,122,26,0.35)] text-xs text-orange-600 dark:text-[#FFB074]">
+                  <span className="font-bold text-[9px] uppercase font-mono tracking-wider bg-orange-100 dark:bg-[rgba(255,122,26,0.25)] px-1.5 py-0.5 rounded">Identity</span>
+                  <span className="italic font-semibold text-stone-750 dark:text-[#F8FAFC]">&ldquo;{profile.identityAnchor}&rdquo;</span>
                 </div>
               )}
             </div>
             <div className="shrink-0 flex items-center gap-2">
-              <span className="text-[10px] bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-2.5 py-1 rounded-full font-bold font-mono">
+              <span className="text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 px-2.5 py-1 rounded-full font-bold font-mono">
                 ● ACTIVE SESSION
               </span>
             </div>
@@ -1063,6 +1525,55 @@ export default function App() {
               {currentView === 'dashboard' && (
                 <div className="space-y-6" id="dashboard-view-panel">
                   
+                  {/* Missed-Day Danger Banner */}
+                  {isStreakAtRisk && (
+                    <motion.div
+                      id="missed-day-danger-banner"
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      className={`p-5 sm:p-6 rounded-[28px] border ${
+                        darkMode
+                          ? 'bg-gradient-to-r from-amber-950/70 via-[#1E2836] to-[#171F2A] border-amber-500/50 shadow-lg text-[#F8FAFC]'
+                          : 'bg-gradient-to-r from-amber-50 via-orange-50/70 to-white border-amber-300 shadow-md text-stone-900'
+                      } relative overflow-hidden`}
+                    >
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                        <div className="flex items-start gap-3.5">
+                          <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-2xl shrink-0 shadow-xs">
+                            🛡️
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h3 className="font-display font-black text-lg text-amber-700 dark:text-amber-300 tracking-tight">
+                                Streak at Risk! 🛡️
+                              </h3>
+                              <span className="text-[10px] font-mono font-bold uppercase tracking-wider bg-amber-200/80 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 px-2 py-0.5 rounded-full border border-amber-300/60 dark:border-amber-700/60">
+                                24h Window
+                              </span>
+                            </div>
+                            <p className={`text-xs mt-1 leading-relaxed ${darkMode ? 'text-[#CBD5E1]' : 'text-stone-700'}`}>
+                              You have 24 hours to use your weekly Grace Shield and save your streak.
+                            </p>
+                          </div>
+                        </div>
+
+                        <button
+                          id="start-recovery-mission-btn"
+                          type="button"
+                          onClick={() => {
+                            setIsRecoveryModalOpen(true);
+                          }}
+                          className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#EA580C] to-amber-500 hover:from-[#C2410C] hover:to-amber-600 text-white font-bold text-xs shadow-md shadow-orange-500/20 transition-all cursor-pointer flex items-center justify-center gap-2 shrink-0"
+                        >
+                          <Shield className="w-4 h-4" />
+                          <span>Start Recovery Mission</span>
+                          <ArrowRight className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+
                   {/* First Day Victory Quest Tracker */}
                   <FirstDayQuests
                     stats={stats}
@@ -1075,11 +1586,11 @@ export default function App() {
 
                   {/* Top Day Slider Node */}
                   <div className={`p-5 rounded-[32px] border ${
-                    darkMode ? 'bg-stone-900 border-stone-800' : 'bg-white border-stone-100'
+                    darkMode ? 'bg-[#171F2A] border-[#263242]' : 'bg-white border-stone-100'
                   } shadow-premium flex items-center justify-between flex-wrap gap-4 transition-colors`}>
                     <div>
-                      <h3 className={`font-bold ${darkMode ? 'text-stone-100' : 'text-stone-800'} text-sm`}>Select Progression Node</h3>
-                      <p className="text-[10px] text-stone-500 mt-0.5">Toggle days to backfill historical tasks</p>
+                      <h3 className={`font-bold ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-800'} text-sm`}>Select Progression Node</h3>
+                      <p className={`text-[10px] ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'} mt-0.5`}>Toggle days to backfill historical tasks</p>
                     </div>
 
                     {/* Week slider list */}
@@ -1093,14 +1604,14 @@ export default function App() {
                             onClick={() => setSelectedDate(wd.dateStr)}
                             className={`p-2.5 rounded-2xl text-center transition flex flex-col items-center justify-center cursor-pointer min-w-11 ${
                               active 
-                                ? 'bg-[#FF8A3D] text-white shadow-premium-orange font-bold' 
-                                : `${darkMode ? 'bg-stone-800 text-stone-300 hover:bg-stone-700' : 'bg-[#F5F1EE] text-stone-600 hover:bg-stone-200'}`
+                                ? 'bg-gradient-to-br from-[#FF7A1A] to-[#F59E0B] text-white shadow-premium-orange font-bold ring-2 ring-orange-400/20' 
+                                : `${darkMode ? 'bg-[#1E2836] border border-[#334255] text-[#94A3B8] hover:bg-[#263242] hover:text-[#F8FAFC]' : 'bg-stone-50 border border-stone-200/60 text-stone-700 hover:bg-stone-100 hover:border-stone-300'}`
                             }`}
                           >
                             <span className="text-[9px] font-mono uppercase tracking-wider">{wd.label}</span>
                             <span className="text-sm font-display mt-0.5">{wd.dayNum}</span>
                             {wd.isToday && (
-                              <span className={`w-1 h-1 rounded-full mt-0.5 ${active ? 'bg-white' : 'bg-[#FF8A3D]'}`} />
+                              <span className={`w-1.5 h-1.5 rounded-full mt-1 ${active ? 'bg-white' : 'bg-[#FF7A1A]'}`} />
                             )}
                           </button>
                         );
@@ -1112,23 +1623,23 @@ export default function App() {
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     
                     <div className={`p-6 rounded-[32px] border ${
-                      darkMode ? 'bg-stone-900 border-stone-800' : 'bg-white border-stone-100'
+                      darkMode ? 'bg-[#171F2A] border-[#263242]' : 'bg-white border-stone-100'
                     } shadow-premium md:col-span-2 flex flex-col justify-between gap-4 transition-colors relative overflow-hidden`} id="interactive-efficiency-dashboard">
                       
                       {/* Card Header with Tabs */}
-                      <div className="flex items-center justify-between border-b border-stone-100 dark:border-stone-800 pb-3 flex-wrap gap-2">
+                      <div className="flex items-center justify-between border-b border-stone-100 dark:border-[#263242] pb-3 flex-wrap gap-2">
                         <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-bold font-mono text-orange-500 bg-orange-50 dark:bg-orange-950/20 px-2 py-0.5 rounded uppercase">Today&apos;s Stack Efficiency</span>
+                          <span className="text-[10px] font-bold font-mono text-orange-700 dark:text-[#FFB074] bg-orange-50 dark:bg-[rgba(255,122,26,0.15)] border border-orange-200 dark:border-[rgba(255,122,26,0.35)] px-2 py-0.5 rounded uppercase">Today&apos;s Stack Efficiency</span>
                         </div>
                         
-                        <div className="flex gap-1.5 bg-[#F5F1EE] dark:bg-stone-800 p-0.5 rounded-xl">
+                        <div className="flex gap-1.5 bg-stone-100 dark:bg-[#0F141C] p-0.5 rounded-xl border border-stone-200/50 dark:border-[#263242]">
                           <button
                             id="tab-btn-gauge"
                             onClick={() => setActiveStackTab('gauge')}
                             className={`px-2.5 py-1 text-[10px] font-bold rounded-lg transition-all cursor-pointer ${
                               activeStackTab === 'gauge'
-                                ? 'bg-white dark:bg-stone-900 text-[#FF8A3D] shadow-sm'
-                                : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
+                                ? 'bg-white dark:bg-[#171F2A] text-[#FF7A1A] dark:text-[#FFB074] shadow-xs border border-orange-200/50 dark:border-[rgba(255,122,26,0.35)]'
+                                : 'text-stone-500 dark:text-[#94A3B8] hover:text-stone-800 dark:hover:text-[#F8FAFC]'
                             }`}
                           >
                             📊 Yield
@@ -1138,8 +1649,8 @@ export default function App() {
                             onClick={() => setActiveStackTab('activate')}
                             className={`px-2.5 py-1 text-[10px] font-bold rounded-lg transition-all cursor-pointer ${
                               activeStackTab === 'activate'
-                                ? 'bg-white dark:bg-stone-900 text-[#FF8A3D] shadow-sm'
-                                : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
+                                ? 'bg-white dark:bg-[#171F2A] text-[#FF7A1A] dark:text-[#FFB074] shadow-xs border border-orange-200/50 dark:border-[rgba(255,122,26,0.35)]'
+                                : 'text-stone-500 dark:text-[#94A3B8] hover:text-stone-800 dark:hover:text-[#F8FAFC]'
                             }`}
                           >
                             ⚡ Activate Space
@@ -1149,8 +1660,8 @@ export default function App() {
                             onClick={() => setActiveStackTab('calibration')}
                             className={`px-2.5 py-1 text-[10px] font-bold rounded-lg transition-all cursor-pointer ${
                               activeStackTab === 'calibration'
-                                ? 'bg-white dark:bg-stone-900 text-[#FF8A3D] shadow-sm'
-                                : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
+                                ? 'bg-white dark:bg-[#171F2A] text-[#FF7A1A] dark:text-[#FFB074] shadow-xs border border-orange-200/50 dark:border-[rgba(255,122,26,0.35)]'
+                                : 'text-stone-500 dark:text-[#94A3B8] hover:text-stone-800 dark:hover:text-[#F8FAFC]'
                             }`}
                           >
                             🧪 Dopamine Lab
@@ -1171,24 +1682,24 @@ export default function App() {
                               className="flex flex-col sm:flex-row items-center justify-between gap-4"
                             >
                               <div>
-                                <h3 className={`text-lg font-display font-black ${darkMode ? 'text-stone-100' : 'text-stone-800'} mt-1 tracking-tight`}>
+                                <h3 className={`text-lg font-display font-black ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-800'} mt-1 tracking-tight`}>
                                   {progressPercent}% Cognitive Yield
                                 </h3>
-                                <p className="text-xs text-stone-500 mt-1 leading-relaxed">
+                                <p className={`text-xs ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'} mt-1 leading-relaxed`}>
                                   You completed {completedTodayCount} of {totalActiveCount} habit stacks configured for today.
                                 </p>
                                 <div className="mt-4 flex flex-wrap gap-2">
                                   <button
                                     id="btn-trigger-activate-tab"
                                     onClick={() => setActiveStackTab('activate')}
-                                    className="px-3.5 py-1.5 bg-orange-50 dark:bg-orange-950/25 border border-orange-100 dark:border-orange-900/30 text-xs font-bold text-[#FF8A3D] rounded-xl hover:bg-[#FF8A3D] hover:text-white transition flex items-center gap-1.5 cursor-pointer animate-pulse"
+                                    className="px-3.5 py-1.5 bg-orange-50 dark:bg-[rgba(255,122,26,0.15)] border border-orange-200 dark:border-[rgba(255,122,26,0.35)] text-xs font-bold text-[#FF7A1A] dark:text-[#FFB074] rounded-xl hover:bg-[#FF7A1A] hover:text-white transition flex items-center gap-1.5 cursor-pointer animate-pulse"
                                   >
                                     <Play className="w-3.5 h-3.5 fill-current" /> Activate Today&apos;s Stacks
                                   </button>
                                   <button
                                     id="btn-trigger-playground-tab"
                                     onClick={() => setActiveStackTab('calibration')}
-                                    className="px-3.5 py-1.5 bg-stone-100 dark:bg-stone-850 text-xs font-bold text-stone-600 dark:text-stone-300 rounded-xl hover:bg-stone-200 dark:hover:bg-stone-700 transition flex items-center gap-1.5 cursor-pointer"
+                                    className="px-3.5 py-1.5 bg-stone-100 dark:bg-[#1E2836] border border-transparent dark:border-[#334255] text-xs font-bold text-stone-600 dark:text-[#94A3B8] rounded-xl hover:bg-stone-200 dark:hover:bg-[#263242] dark:hover:text-[#F8FAFC] transition flex items-center gap-1.5 cursor-pointer"
                                   >
                                     <Beaker className="w-3.5 h-3.5" /> Test Splashes
                                   </button>
@@ -1196,9 +1707,9 @@ export default function App() {
                               </div>
 
                               {/* Circular Progress Gauge */}
-                              <div className={`w-20 h-20 rounded-full border-4 ${darkMode ? 'border-stone-800' : 'border-stone-100'} flex items-center justify-center shrink-0 relative shadow-inner`}>
-                                <div className="absolute inset-0 rounded-full border-4 border-[#FF8A3D] opacity-20 animate-pulse" />
-                                <span className={`text-sm font-mono font-black ${darkMode ? 'text-orange-400' : 'text-[#FF8A3D]'}`}>{progressPercent}%</span>
+                              <div className={`w-20 h-20 rounded-full border-4 ${darkMode ? 'border-[#263242]' : 'border-stone-100'} flex items-center justify-center shrink-0 relative shadow-inner`}>
+                                <div className="absolute inset-0 rounded-full border-4 border-[#FF7A1A] opacity-20 animate-pulse" />
+                                <span className={`text-sm font-mono font-black ${darkMode ? 'text-[#FFB074]' : 'text-[#FF7A1A]'}`}>{progressPercent}%</span>
                               </div>
                             </motion.div>
                           )}
@@ -1213,8 +1724,8 @@ export default function App() {
                               className="space-y-3"
                             >
                               <div className="flex justify-between items-center">
-                                <h4 className="text-xs font-bold text-stone-500 uppercase tracking-wider">Somatic Trigger Runner</h4>
-                                <span className="text-[10px] font-mono font-bold text-[#FF8A3D] bg-orange-50 dark:bg-orange-950/25 px-2 py-0.5 rounded">
+                                <h4 className={`text-xs font-bold ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'} uppercase tracking-wider`}>Somatic Trigger Runner</h4>
+                                <span className="text-[10px] font-mono font-bold text-[#FF7A1A] dark:text-[#FFB074] bg-orange-50 dark:bg-[rgba(255,122,26,0.15)] border border-orange-200 dark:border-[rgba(255,122,26,0.35)] px-2 py-0.5 rounded">
                                   {completedTodayCount}/{totalActiveCount} Completed
                                 </span>
                               </div>
@@ -1223,15 +1734,15 @@ export default function App() {
                                 <div className="space-y-2 max-h-[140px] overflow-y-auto pr-1">
                                   {habits
                                     .filter(h => !h.isArchived)
-                                    .map(habit => {
+                                    .map((habit, idx) => {
                                       const isCompleted = !!habit.records[selectedDate]?.completed;
                                       return (
                                         <div 
-                                          key={habit.id}
+                                          key={`somatic-${habit.id}-${idx}`}
                                           className={`p-3 rounded-2xl border ${
                                             isCompleted 
-                                              ? 'bg-emerald-500/5 border-emerald-100/30' 
-                                              : (darkMode ? 'bg-stone-800/30 border-stone-850' : 'bg-stone-50 border-stone-100')
+                                              ? 'bg-emerald-500/5 dark:bg-emerald-950/20 border-emerald-100/30 dark:border-emerald-900/30' 
+                                              : (darkMode ? 'bg-[#1E2836] border-[#334255]' : 'bg-stone-50 border-stone-100')
                                           } flex items-center justify-between gap-3 transition`}
                                         >
                                           <div className="min-w-0 flex-1">
@@ -1239,9 +1750,9 @@ export default function App() {
                                               <span className={`w-2 h-2 rounded-full shrink-0 ${
                                                 habit.category === 'mindfulness' ? 'bg-indigo-400' :
                                                 habit.category === 'health' ? 'bg-teal-400' :
-                                                habit.category === 'fitness' ? 'bg-pink-400' : 'bg-[#FF8A3D]'
+                                                habit.category === 'fitness' ? 'bg-pink-400' : 'bg-[#FF7A1A]'
                                               }`} />
-                                              <p className={`text-xs font-bold ${isCompleted ? 'line-through text-stone-400' : (darkMode ? 'text-stone-250' : 'text-stone-850')} truncate`}>
+                                              <p className={`text-xs font-bold ${isCompleted ? 'line-through decoration-slate-400 text-stone-400 dark:text-[#64748B]' : (darkMode ? 'text-[#F8FAFC]' : 'text-stone-850')} truncate`}>
                                                 {habit.name}
                                               </p>
                                               {(habit.id === 'def-1' || 
@@ -1249,19 +1760,19 @@ export default function App() {
                                                 habit.name.toLowerCase().includes('breathe') || 
                                                 habit.name.toLowerCase().includes('plank') ||
                                                 habit.name.toLowerCase().includes('stretch')) && (
-                                                <span className="text-[8px] font-mono font-bold text-indigo-500 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/30 px-1 py-0.5 rounded uppercase shrink-0">
+                                                <span className="text-[8px] font-mono font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/30 px-1 py-0.5 rounded uppercase shrink-0">
                                                   Guided ⚡
                                                 </span>
                                               )}
                                             </div>
-                                            <p className="text-[10px] text-stone-500 mt-0.5 truncate pl-4">
+                                            <p className={`text-[10px] ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'} mt-0.5 truncate pl-4`}>
                                               Trigger: <strong>After I {habit.description.replace(/^After I\s+/i, '') || 'start my day'}</strong>
                                             </p>
                                           </div>
 
                                           <div className="shrink-0">
                                             {isCompleted ? (
-                                              <span className="text-[10px] bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 font-bold px-2.5 py-1 rounded-lg">
+                                              <span className="text-[10px] bg-emerald-100 dark:bg-[rgba(16,185,129,0.15)] text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-[rgba(16,185,129,0.35)] font-bold px-2.5 py-1 rounded-lg">
                                                 ✓ Completed
                                               </span>
                                             ) : (
@@ -1276,7 +1787,7 @@ export default function App() {
                                                   playSuccessSound();
                                                   handleToggleComplete(habit.id, { completed: true });
                                                 }}
-                                                className="px-3 py-1.5 bg-[#FF8A3D] hover:bg-[#e77a2f] text-white text-[10px] font-bold rounded-xl transition shadow-sm hover:shadow cursor-pointer"
+                                                className="px-3 py-1.5 bg-[#FF7A1A] hover:bg-[#e76b13] text-white text-[10px] font-bold rounded-xl transition shadow-sm hover:shadow cursor-pointer"
                                               >
                                                 ⚡ Trigger
                                               </button>
@@ -1287,7 +1798,7 @@ export default function App() {
                                     })}
                                 </div>
                               ) : (
-                                <p className="text-xs text-stone-500 py-4 text-center">
+                                <p className={`text-xs ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'} py-4 text-center`}>
                                   No active habit stacks configured. Click &ldquo;+ Stack Habit&rdquo; below to get started!
                                 </p>
                               )}
@@ -1320,24 +1831,24 @@ export default function App() {
                                 className="space-y-4"
                               >
                                 <div className="flex items-center justify-between">
-                                  <h4 className="text-xs font-bold text-stone-550 dark:text-stone-400 uppercase tracking-wider">Neurochemical Laboratory</h4>
-                                  <span className="text-[9px] font-mono font-bold text-emerald-500 bg-emerald-50 dark:bg-emerald-950/20 px-2 py-0.5 rounded border border-emerald-500/15 animate-pulse">● LIVE REACTIONS</span>
+                                  <h4 className={`text-xs font-bold ${darkMode ? 'text-[#94A3B8]' : 'text-stone-550'} uppercase tracking-wider`}>Neurochemical Laboratory</h4>
+                                  <span className="text-[9px] font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-[rgba(16,185,129,0.15)] px-2 py-0.5 rounded border border-emerald-200 dark:border-[rgba(16,185,129,0.35)] animate-pulse">● LIVE REACTIONS</span>
                                 </div>
 
-                                <p className="text-[11px] text-stone-500 leading-relaxed -mt-1.5">
+                                <p className={`text-[11px] ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'} leading-relaxed -mt-1.5`}>
                                   Completing routines triggers chemical reactions. Watch fluids rise and bubbles float as evidence of physiological shift.
                                 </p>
 
                                 {/* Vessel Row */}
-                                <div className="grid grid-cols-3 gap-3 pt-2 bg-stone-50/50 dark:bg-stone-900/35 p-4 rounded-3xl border border-stone-150/45 dark:border-stone-850/60">
+                                <div className={`grid grid-cols-3 gap-3 pt-2 ${darkMode ? 'bg-[#0F141C] border-[#263242]' : 'bg-stone-50/50 border-stone-150/45'} p-4 rounded-3xl border`}>
                                   {[
-                                    { name: 'Dopamine', pct: dopaminePct, color: 'from-orange-500 to-amber-400', glow: 'shadow-orange-500/40', textColor: 'text-orange-500', bubbleColor: 'bg-orange-300', note: 'Productivity' },
+                                    { name: 'Dopamine', pct: dopaminePct, color: 'from-[#FF7A1A] to-[#F59E0B]', glow: 'shadow-orange-500/40', textColor: 'text-[#FF7A1A]', bubbleColor: 'bg-orange-300', note: 'Productivity' },
                                     { name: 'Serotonin', pct: serotoninPct, color: 'from-emerald-500 to-teal-400', glow: 'shadow-emerald-500/40', textColor: 'text-emerald-500', bubbleColor: 'bg-emerald-300', note: 'Mindfulness' },
                                     { name: 'Endorphins', pct: endorphinPct, color: 'from-fuchsia-500 to-pink-400', glow: 'shadow-fuchsia-500/40', textColor: 'text-fuchsia-500', bubbleColor: 'bg-fuchsia-300', note: 'Somatic/Fitness' }
                                   ].map((tube) => (
                                     <div key={tube.name} className="flex flex-col items-center gap-1.5">
                                       {/* Glowing test tube */}
-                                      <div className={`relative w-10 sm:w-12 h-28 sm:h-32 rounded-b-full border-2 border-stone-300 dark:border-stone-750 bg-stone-100/5 dark:bg-stone-950/50 overflow-hidden flex flex-col justify-end shadow-inner`}>
+                                      <div className={`relative w-10 sm:w-12 h-28 sm:h-32 rounded-b-full border-2 ${darkMode ? 'border-[#334255] bg-[#171F2A]' : 'border-stone-300 bg-stone-100/5'} overflow-hidden flex flex-col justify-end shadow-inner`}>
                                         
                                         {/* Fluid filler */}
                                         <motion.div
@@ -1380,8 +1891,8 @@ export default function App() {
                                       
                                       {/* Metadata */}
                                       <div className="text-center">
-                                        <p className="text-[10px] font-bold text-stone-750 dark:text-stone-350 leading-none">{tube.name}</p>
-                                        <p className="text-[8px] text-stone-400 mt-0.5">{tube.note}</p>
+                                        <p className={`text-[10px] font-bold ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-750'} leading-none`}>{tube.name}</p>
+                                        <p className={`text-[8px] ${darkMode ? 'text-[#94A3B8]' : 'text-stone-400'} mt-0.5`}>{tube.note}</p>
                                         <p className={`text-[11px] font-mono font-black ${tube.textColor} mt-1`}>{tube.pct}%</p>
                                       </div>
                                     </div>
@@ -1390,10 +1901,10 @@ export default function App() {
 
                                 {/* Custom spark parameters */}
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                                  <div className="p-3 bg-stone-50/50 dark:bg-stone-900/35 rounded-2xl border border-stone-150/45 dark:border-stone-850/60 flex flex-col justify-between">
-                                    <div className="flex justify-between text-[10px] font-mono text-stone-500 mb-1.5">
+                                  <div className={`p-3 ${darkMode ? 'bg-[#1E2836] border-[#334255]' : 'bg-stone-50/50 border-stone-150/45'} rounded-2xl border flex flex-col justify-between`}>
+                                    <div className={`flex justify-between text-[10px] font-mono ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'} mb-1.5`}>
                                       <span>Reactor Vol.</span>
-                                      <strong className="text-[#FF8A3D]">{customSplashIntensity} Sparks</strong>
+                                      <strong className="text-[#FF7A1A]">{customSplashIntensity} Sparks</strong>
                                     </div>
                                     <input 
                                       type="range" 
@@ -1401,7 +1912,7 @@ export default function App() {
                                       max="120" 
                                       value={customSplashIntensity} 
                                       onChange={(e) => setCustomSplashIntensity(Number(e.target.value))}
-                                      className="w-full accent-[#FF8A3D] cursor-pointer h-1.5 bg-stone-200 dark:bg-stone-800 rounded-lg appearance-none"
+                                      className="w-full accent-[#FF7A1A] cursor-pointer h-1.5 bg-stone-200 dark:bg-[#0F141C] rounded-lg appearance-none"
                                     />
                                     <div className="flex gap-1.5 mt-2.5">
                                       {['mixed', 'dopamine', 'serotonin', 'endorphin'].map((theme) => (
@@ -1410,8 +1921,8 @@ export default function App() {
                                           onClick={() => setCustomSplashColor(theme)}
                                           className={`px-2 py-0.5 text-[8px] font-bold rounded-md capitalize transition border cursor-pointer flex-1 ${
                                             customSplashColor === theme
-                                              ? 'bg-[#FF8A3D] text-white border-[#FF8A3D]'
-                                              : `${darkMode ? 'bg-stone-800 border-stone-700 text-stone-400 hover:text-stone-200' : 'bg-white border-stone-200 text-stone-600 hover:text-[#FF8A3D]'}`
+                                              ? 'bg-[#FF7A1A] text-white border-[#FF7A1A]'
+                                              : `${darkMode ? 'bg-[#171F2A] border-[#334255] text-[#94A3B8] hover:text-[#F8FAFC]' : 'bg-white border-stone-200 text-stone-600 hover:text-[#FF8A3D]'}`
                                           }`}
                                         >
                                           {theme}
@@ -1424,7 +1935,7 @@ export default function App() {
                                     onClick={(e) => {
                                       const colorsMap: Record<string, string[]> = {
                                         mixed: [],
-                                        dopamine: ['#FF8A3D', '#FFB443', '#FFCE56', '#F59E0B'],
+                                        dopamine: ['#FF7A1A', '#FFB443', '#FFCE56', '#F59E0B'],
                                         serotonin: ['#10B981', '#34D399', '#A7F3D0', '#059669'],
                                         endorphin: ['#EC4899', '#F472B6', '#8B5CF6', '#D946EF']
                                       };
@@ -1440,7 +1951,7 @@ export default function App() {
                                       window.dispatchEvent(splashEvent);
                                       playSuccessSound();
                                     }}
-                                    className="p-4 bg-gradient-to-r from-orange-500 to-[#FF8A3D] text-white rounded-2xl shadow-premium-orange hover:brightness-115 active:scale-[0.98] transition flex flex-col items-center justify-center text-center cursor-pointer border border-orange-400/20"
+                                    className="p-4 bg-gradient-to-r from-[#FF7A1A] to-[#F59E0B] text-white rounded-2xl shadow-premium-orange hover:brightness-115 active:scale-[0.98] transition flex flex-col items-center justify-center text-center cursor-pointer border border-orange-400/20"
                                   >
                                     <span className="text-[10px] font-black tracking-widest uppercase mb-1">💥 Spark Neuro-Reactor</span>
                                     <span className="text-[8px] opacity-80 leading-normal font-medium max-w-[150px]">Ignite direct visual particles radiating from your cursor</span>
@@ -1455,13 +1966,13 @@ export default function App() {
                     </div>
 
                     <div className={`p-6 rounded-[32px] border ${
-                      darkMode ? 'bg-stone-900 border-stone-800' : 'bg-white border-stone-100'
+                      darkMode ? 'bg-[#171F2A] border-[#263242]' : 'bg-white border-stone-100'
                     } shadow-premium flex flex-col justify-between transition-colors`}>
                       <div className="flex items-center gap-2">
-                        <Sparkles className="w-4 h-4 text-orange-500 animate-pulse" />
-                        <h4 className={`text-xs font-bold ${darkMode ? 'text-stone-300' : 'text-stone-700'} uppercase tracking-wider`}>Dr. Gethro&apos;s Tip</h4>
+                        <Sparkles className="w-4 h-4 text-[#FF7A1A] animate-pulse" />
+                        <h4 className={`text-xs font-bold ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-700'} uppercase tracking-wider`}>Dr. Gethro&apos;s Tip</h4>
                       </div>
-                      <p className={`text-[11px] ${darkMode ? 'text-stone-300' : 'text-stone-600'} leading-normal italic mt-2`}>
+                      <p className={`text-[11px] ${darkMode ? 'text-[#94A3B8]' : 'text-stone-600'} leading-normal italic mt-2`}>
                         &ldquo;To cement {profile.growthPersona} styles, complete your first stacked contract within 30 minutes of waking.&rdquo;
                       </p>
                     </div>
@@ -1470,124 +1981,124 @@ export default function App() {
 
                   {/* Somatic Neuro-Chemical Equilibrium Panel */}
                   <div className={`p-6 rounded-[32px] border ${
-                    darkMode ? 'bg-stone-900 border-stone-800' : 'bg-white border-stone-100'
+                    darkMode ? 'bg-[#171F2A] border-[#263242]' : 'bg-white border-stone-100'
                   } shadow-premium transition-colors duration-300 relative overflow-hidden`} id="somatic-neurochemical-panel">
                     <div className="absolute right-0 top-0 w-36 h-36 bg-orange-100/10 rounded-full blur-2xl pointer-events-none" />
                     
                     <div className="flex items-center gap-2.5 mb-5">
-                      <div className="w-8 h-8 rounded-lg bg-orange-50 border border-orange-150 flex items-center justify-center shadow-sm shrink-0">
-                        <Brain className="w-4.5 h-4.5 text-[#FF8A3D] animate-pulse" />
+                      <div className="w-8 h-8 rounded-lg bg-orange-50 dark:bg-[rgba(255,122,26,0.15)] border border-orange-150 dark:border-[rgba(255,122,26,0.35)] flex items-center justify-center shadow-sm shrink-0">
+                        <Brain className="w-4.5 h-4.5 text-[#FF7A1A] animate-pulse" />
                       </div>
                       <div>
-                        <h3 className={`text-sm font-display font-black ${darkMode ? 'text-stone-100' : 'text-stone-800'} tracking-tight`}>
+                        <h3 className={`text-sm font-display font-black ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-800'} tracking-tight`}>
                           Somatic Neuro-Chemical Equilibrium
                         </h3>
-                        <p className="text-[10px] text-stone-500 font-medium">
+                        <p className={`text-[10px] ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'} font-medium`}>
                           Estimated biological concentrations calibrated from stack progress & linked somatic telemetry.
                         </p>
                       </div>
                     </div>
 
                     {stats.totalCompletedCount === 0 ? (
-                      <div className="flex flex-col items-center justify-center text-center p-8 bg-stone-50/50 dark:bg-stone-900/30 border border-dashed border-stone-200 dark:border-stone-800 rounded-2xl">
-                        <div className="w-12 h-12 bg-orange-100/60 dark:bg-orange-950/30 rounded-full flex items-center justify-center text-orange-600 dark:text-[#FF8A3D] mb-3 animate-pulse">
+                      <div className="flex flex-col items-center justify-center text-center p-8 bg-stone-50/50 dark:bg-[#0F141C] border border-dashed border-stone-200 dark:border-[#263242] rounded-2xl">
+                        <div className="w-12 h-12 bg-orange-100/60 dark:bg-[rgba(255,122,26,0.15)] rounded-full flex items-center justify-center text-orange-600 dark:text-[#FFB074] mb-3 animate-pulse">
                           <Brain className="w-6 h-6 animate-pulse" />
                         </div>
-                        <h4 className="text-sm font-bold text-stone-800 dark:text-stone-200">No calibration data yet</h4>
-                        <p className="text-xs text-stone-500 mt-1.5 max-w-md leading-relaxed">
+                        <h4 className="text-sm font-bold text-stone-800 dark:text-[#F8FAFC]">No calibration data yet</h4>
+                        <p className={`text-xs ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'} mt-1.5 max-w-md leading-relaxed`}>
                           Your neurochemical insights will appear as you build consistency. Complete your first habit to begin baseline neurochemical calibration!
                         </p>
                         <div className="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-3 w-full max-w-lg">
-                          <div className="p-3 bg-white dark:bg-stone-850 rounded-xl border border-stone-150/40 dark:border-stone-800 text-left">
-                            <span className="text-[10px] font-bold text-stone-450 dark:text-stone-500 block uppercase">⚡ Dopamine</span>
-                            <span className="text-xs font-semibold text-stone-600 dark:text-stone-300 mt-1 block font-mono">Calibrating...</span>
+                          <div className={`p-3 ${darkMode ? 'bg-[#1E2836] border-[#334255]' : 'bg-white border-stone-150/40'} rounded-xl border text-left`}>
+                            <span className={`text-[10px] font-bold ${darkMode ? 'text-[#94A3B8]' : 'text-stone-450'} block uppercase`}>⚡ Dopamine</span>
+                            <span className={`text-xs font-semibold ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-600'} mt-1 block font-mono`}>Calibrating...</span>
                           </div>
-                          <div className="p-3 bg-white dark:bg-stone-850 rounded-xl border border-stone-150/40 dark:border-stone-800 text-left">
-                            <span className="text-[10px] font-bold text-stone-450 dark:text-stone-500 block uppercase">🌱 Serotonin</span>
-                            <span className="text-xs font-semibold text-stone-600 dark:text-stone-300 mt-1 block font-mono">Calibrating...</span>
+                          <div className={`p-3 ${darkMode ? 'bg-[#1E2836] border-[#334255]' : 'bg-white border-stone-150/40'} rounded-xl border text-left`}>
+                            <span className={`text-[10px] font-bold ${darkMode ? 'text-[#94A3B8]' : 'text-stone-450'} block uppercase`}>🌱 Serotonin</span>
+                            <span className={`text-xs font-semibold ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-600'} mt-1 block font-mono`}>Calibrating...</span>
                           </div>
-                          <div className="p-3 bg-white dark:bg-stone-850 rounded-xl border border-stone-150/40 dark:border-stone-800 text-left">
-                            <span className="text-[10px] font-bold text-stone-450 dark:text-stone-500 block uppercase">🏃 Endorphins</span>
-                            <span className="text-xs font-semibold text-stone-600 dark:text-stone-300 mt-1 block font-mono">Calibrating...</span>
+                          <div className={`p-3 ${darkMode ? 'bg-[#1E2836] border-[#334255]' : 'bg-white border-stone-150/40'} rounded-xl border text-left`}>
+                            <span className={`text-[10px] font-bold ${darkMode ? 'text-[#94A3B8]' : 'text-stone-450'} block uppercase`}>🏃 Endorphins</span>
+                            <span className={`text-xs font-semibold ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-600'} mt-1 block font-mono`}>Calibrating...</span>
                           </div>
                         </div>
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                         {/* Dopamine */}
-                        <div className={`p-4 rounded-2xl border ${darkMode ? 'bg-stone-800/40 border-stone-800' : 'bg-orange-50/15 border-orange-100/40'} flex flex-col justify-between`}>
+                        <div className={`p-4 rounded-2xl border ${darkMode ? 'bg-[#1E2836] border-[#334255]' : 'bg-gradient-to-br from-orange-50/50 to-amber-50/30 border-orange-100'} flex flex-col justify-between shadow-2xs`}>
                           <div>
                             <div className="flex justify-between items-center mb-1.5">
-                              <span className="text-xs font-bold text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
+                              <span className="text-xs font-bold text-stone-800 dark:text-[#F8FAFC] flex items-center gap-1.5">
                                 ⚡ Dopamine
                               </span>
-                              <span className="text-xs font-mono font-bold text-[#FF8A3D]">
+                              <span className="text-xs font-mono font-bold text-orange-600 dark:text-[#FFB074]">
                                 {dopamineLevel}%
                               </span>
                             </div>
                             
-                            <div className="w-full bg-[#F5F1EE] dark:bg-stone-850 h-2.5 rounded-full overflow-hidden border border-stone-150 dark:border-stone-800 p-0.5">
+                            <div className="w-full bg-stone-100 dark:bg-[#0F141C] h-2.5 rounded-full overflow-hidden border border-stone-200/60 dark:border-[#263242] p-0.5">
                               <motion.div 
                                 initial={{ width: 0 }}
                                 animate={{ width: `${dopamineLevel}%` }}
                                 transition={{ duration: 1 }}
-                                className="h-full bg-[#FF8A3D] rounded-full"
+                                className="h-full bg-gradient-to-r from-[#FF7A1A] to-[#F59E0B] rounded-full"
                               />
                             </div>
                           </div>
-                          <p className={`text-[10px] ${darkMode ? 'text-stone-400' : 'text-stone-500'} leading-relaxed mt-3`}>
+                          <p className={`text-[10px] ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'} leading-relaxed mt-3`}>
                             <strong>Attention & Drive:</strong> Fuels task motivation. Stacking contract completions spikes concentration level.
                           </p>
                         </div>
 
                         {/* Serotonin */}
-                        <div className={`p-4 rounded-2xl border ${darkMode ? 'bg-stone-800/40 border-stone-800' : 'bg-emerald-50/15 border-emerald-100/40'} flex flex-col justify-between`}>
+                        <div className={`p-4 rounded-2xl border ${darkMode ? 'bg-[#1E2836] border-[#334255]' : 'bg-gradient-to-br from-emerald-50/50 to-teal-50/30 border-emerald-100'} flex flex-col justify-between shadow-2xs`}>
                           <div>
                             <div className="flex justify-between items-center mb-1.5">
-                              <span className="text-xs font-bold text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
+                              <span className="text-xs font-bold text-stone-800 dark:text-[#F8FAFC] flex items-center gap-1.5">
                                 🌱 Serotonin
                               </span>
-                              <span className="text-xs font-mono font-bold text-emerald-500">
+                              <span className="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400">
                                 {serotoninLevel}%
                               </span>
                             </div>
                             
-                            <div className="w-full bg-[#F5F1EE] dark:bg-stone-850 h-2.5 rounded-full overflow-hidden border border-stone-150 dark:border-stone-800 p-0.5">
+                            <div className="w-full bg-stone-100 dark:bg-[#0F141C] h-2.5 rounded-full overflow-hidden border border-stone-200/60 dark:border-[#263242] p-0.5">
                               <motion.div 
                                 initial={{ width: 0 }}
                                 animate={{ width: `${serotoninLevel}%` }}
                                 transition={{ duration: 1 }}
-                                className="h-full bg-emerald-500 rounded-full"
+                                className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full"
                               />
                             </div>
                           </div>
-                          <p className={`text-[10px] ${darkMode ? 'text-stone-400' : 'text-stone-500'} leading-relaxed mt-3`}>
+                          <p className={`text-[10px] ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'} leading-relaxed mt-3`}>
                             <strong>Cognitive Tone:</strong> Stabilizes mental stamina. Boosted by mindful reflection logs and deep breathing.
                           </p>
                         </div>
 
                         {/* Endorphins */}
-                        <div className={`p-4 rounded-2xl border ${darkMode ? 'bg-stone-800/40 border-stone-800' : 'bg-pink-50/15 border-pink-100/40'} flex flex-col justify-between`}>
+                        <div className={`p-4 rounded-2xl border ${darkMode ? 'bg-[#1E2836] border-[#334255]' : 'bg-gradient-to-br from-pink-50/50 to-rose-50/30 border-pink-100'} flex flex-col justify-between shadow-2xs`}>
                           <div>
                             <div className="flex justify-between items-center mb-1.5">
-                              <span className="text-xs font-bold text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
+                              <span className="text-xs font-bold text-stone-800 dark:text-[#F8FAFC] flex items-center gap-1.5">
                                 🏃 Endorphins
                               </span>
-                              <span className="text-xs font-mono font-bold text-pink-500">
+                              <span className="text-xs font-mono font-bold text-rose-600 dark:text-rose-400">
                                 {endorphinLevel}%
                               </span>
                             </div>
                             
-                            <div className="w-full bg-[#F5F1EE] dark:bg-stone-850 h-2.5 rounded-full overflow-hidden border border-stone-150 dark:border-stone-800 p-0.5">
+                            <div className="w-full bg-stone-100 dark:bg-[#0F141C] h-2.5 rounded-full overflow-hidden border border-stone-200/60 dark:border-[#263242] p-0.5">
                               <motion.div 
                                 initial={{ width: 0 }}
                                 animate={{ width: `${endorphinLevel}%` }}
                                 transition={{ duration: 1 }}
-                                className="h-full bg-pink-500 rounded-full"
+                                className="h-full bg-gradient-to-r from-rose-500 to-pink-500 rounded-full"
                               />
                             </div>
                           </div>
-                          <p className={`text-[10px] ${darkMode ? 'text-stone-400' : 'text-stone-500'} leading-relaxed mt-3`}>
+                          <p className={`text-[10px] ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'} leading-relaxed mt-3`}>
                             <strong>Physical Flow:</strong> Counters bodily stress. Unlocked by physical fitness targets and synced wearable steps.
                           </p>
                         </div>
@@ -1597,26 +2108,26 @@ export default function App() {
 
                   {/* Somatic Practice Laboratory */}
                   <div className={`p-6 rounded-[32px] border ${
-                    darkMode ? 'bg-stone-900 border-stone-800' : 'bg-white border-stone-100'
+                    darkMode ? 'bg-[#171F2A] border-[#263242]' : 'bg-white border-stone-100'
                   } shadow-premium transition-colors relative overflow-hidden`} id="somatic-practice-laboratory">
                     <div className="absolute top-0 right-0 w-48 h-48 bg-gradient-to-br from-orange-500/10 to-transparent rounded-full blur-3xl pointer-events-none" />
                     
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-stone-100 dark:border-stone-800 pb-4">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-stone-100 dark:border-[#263242] pb-4">
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-bold font-mono text-orange-500 bg-orange-50 dark:bg-orange-950/20 px-2 py-0.5 rounded uppercase">Interactive Somatic Labs</span>
-                          <span className="text-[9px] font-mono font-bold text-emerald-500 bg-emerald-50 dark:bg-emerald-950/20 px-2 py-0.5 rounded">● AUDIO READY</span>
+                          <span className="text-[10px] font-bold font-mono text-orange-700 dark:text-[#FFB074] bg-orange-50 dark:bg-[rgba(255,122,26,0.15)] border border-orange-200 dark:border-[rgba(255,122,26,0.35)] px-2 py-0.5 rounded uppercase">Interactive Somatic Labs</span>
+                          <span className="text-[9px] font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-[rgba(16,185,129,0.15)] border border-emerald-200 dark:border-[rgba(16,185,129,0.35)] px-2 py-0.5 rounded">● AUDIO READY</span>
                         </div>
-                        <h3 className={`text-base font-display font-extrabold ${darkMode ? 'text-stone-100' : 'text-stone-900'} mt-1.5 tracking-tight`}>
+                        <h3 className={`text-base font-display font-extrabold ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-900'} mt-1.5 tracking-tight`}>
                           Somatic Exercise Quick-Launch Hub
                         </h3>
-                        <p className="text-xs text-stone-500 leading-relaxed max-w-2xl mt-0.5">
+                        <p className={`text-xs ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'} leading-relaxed max-w-2xl mt-0.5`}>
                           Instantly launch guided physical stretch, box-breathing, or core somatic exercises. 
                           Completing a session triggers full-screen visual biofeedback, customized synth tones, and awards direct XP!
                         </p>
                       </div>
 
-                      <div className="text-[10px] text-stone-400 font-medium italic border-l-2 border-orange-500/30 pl-3 max-w-[220px]">
+                      <div className={`text-[10px] ${darkMode ? 'text-[#94A3B8]' : 'text-stone-400'} font-medium italic border-l-2 border-[#FF7A1A]/40 pl-3 max-w-[220px]`}>
                         💡 Or, check off any habit containing &ldquo;breath&rdquo;, &ldquo;breathe&rdquo;, &ldquo;stretch&rdquo; or &ldquo;plank&rdquo; to launch guided versions!
                       </div>
                     </div>
@@ -1624,21 +2135,21 @@ export default function App() {
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4">
                       {/* Breathing */}
                       <div className={`p-4 rounded-2xl border ${
-                        darkMode ? 'bg-stone-850/40 border-stone-800 hover:border-orange-500/40' : 'bg-white border-stone-150 hover:border-orange-200 hover:shadow-sm'
+                        darkMode ? 'bg-[#1E2836] border-[#334255] hover:border-[#FF7A1A]/40' : 'bg-white border-stone-150 hover:border-orange-200 hover:shadow-sm'
                       } transition flex flex-col justify-between`}>
                         <div>
                           <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-[#FF8A3D] font-mono">💨 4-4-4 BOX CYCLE</span>
-                            <span className="text-[9px] font-mono bg-orange-50 dark:bg-orange-950/20 text-[#FF8A3D] px-1.5 py-0.5 rounded">35 XP</span>
+                            <span className="text-xs font-bold text-[#FF7A1A] font-mono">💨 4-4-4 BOX CYCLE</span>
+                            <span className="text-[9px] font-mono bg-orange-50 dark:bg-[rgba(255,122,26,0.15)] text-[#FF7A1A] dark:text-[#FFB074] border border-orange-200 dark:border-[rgba(255,122,26,0.35)] px-1.5 py-0.5 rounded">35 XP</span>
                           </div>
-                          <h4 className={`font-bold ${darkMode ? 'text-stone-200' : 'text-stone-800'} text-xs mt-2.5`}>Guided Zen Breathing</h4>
-                          <p className="text-[10px] text-stone-500 mt-1 leading-normal">
+                          <h4 className={`font-bold ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-800'} text-xs mt-2.5`}>Guided Zen Breathing</h4>
+                          <p className={`text-[10px] ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'} mt-1 leading-normal`}>
                             Slow down heart-rate variability and reset neurological focus using structured inhale, hold, and exhale stages.
                           </p>
                         </div>
                         <button
                           onClick={() => launchVirtualSomatic('breathing')}
-                          className="mt-4 w-full py-2 bg-[#FF8A3D] hover:bg-[#e77a2f] text-white text-[11px] font-bold rounded-xl shadow-premium-orange transition flex items-center justify-center gap-1 cursor-pointer"
+                          className="mt-4 w-full py-2 bg-[#FF7A1A] hover:bg-[#e76b13] text-white text-[11px] font-bold rounded-xl shadow-premium-orange transition flex items-center justify-center gap-1 cursor-pointer"
                         >
                           <Play className="w-3 h-3 fill-current" /> Begin Breathwork
                         </button>
@@ -1646,15 +2157,15 @@ export default function App() {
 
                       {/* Stretch */}
                       <div className={`p-4 rounded-2xl border ${
-                        darkMode ? 'bg-stone-850/40 border-stone-800 hover:border-orange-500/40' : 'bg-white border-stone-150 hover:border-orange-200 hover:shadow-sm'
+                        darkMode ? 'bg-[#1E2836] border-[#334255] hover:border-[#FF7A1A]/40' : 'bg-white border-stone-150 hover:border-orange-200 hover:shadow-sm'
                       } transition flex flex-col justify-between`}>
                         <div>
                           <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-teal-500 font-mono">🙆 PROPRIOCEPTIVE</span>
-                            <span className="text-[9px] font-mono bg-teal-50 dark:bg-teal-950/20 text-teal-600 px-1.5 py-0.5 rounded">25 XP</span>
+                            <span className="text-xs font-bold text-teal-600 dark:text-teal-400 font-mono">🙆 PROPRIOCEPTIVE</span>
+                            <span className="text-[9px] font-mono bg-teal-50 dark:bg-teal-950/20 text-teal-600 dark:text-teal-400 px-1.5 py-0.5 rounded">25 XP</span>
                           </div>
-                          <h4 className={`font-bold ${darkMode ? 'text-stone-200' : 'text-stone-800'} text-xs mt-2.5`}>30s Centering Stretch</h4>
-                          <p className="text-[10px] text-stone-500 mt-1 leading-normal">
+                          <h4 className={`font-bold ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-800'} text-xs mt-2.5`}>30s Centering Stretch</h4>
+                          <p className={`text-[10px] ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'} mt-1 leading-normal`}>
                             A quick physical alignment to open posture, release thoracic muscle tension, and realign cognitive connection.
                           </p>
                         </div>
@@ -1668,15 +2179,15 @@ export default function App() {
 
                       {/* Plank */}
                       <div className={`p-4 rounded-2xl border ${
-                        darkMode ? 'bg-stone-850/40 border-stone-800 hover:border-orange-500/40' : 'bg-white border-stone-150 hover:border-orange-200 hover:shadow-sm'
+                        darkMode ? 'bg-[#1E2836] border-[#334255] hover:border-[#FF7A1A]/40' : 'bg-white border-stone-150 hover:border-orange-200 hover:shadow-sm'
                       } transition flex flex-col justify-between`}>
                         <div>
                           <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-indigo-500 font-mono">⚡ POSTURAL FOCUS</span>
-                            <span className="text-[9px] font-mono bg-indigo-50 dark:bg-indigo-950/20 text-indigo-600 px-1.5 py-0.5 rounded">30 XP</span>
+                            <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 font-mono">⚡ POSTURAL FOCUS</span>
+                            <span className="text-[9px] font-mono bg-indigo-50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400 px-1.5 py-0.5 rounded">30 XP</span>
                           </div>
-                          <h4 className={`font-bold ${darkMode ? 'text-stone-200' : 'text-stone-800'} text-xs mt-2.5`}>30s Core Activation Plank</h4>
-                          <p className="text-[10px] text-stone-500 mt-1 leading-normal">
+                          <h4 className={`font-bold ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-800'} text-xs mt-2.5`}>30s Core Activation Plank</h4>
+                          <p className={`text-[10px] ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'} mt-1 leading-normal`}>
                             Activate fundamental spinal stabilization structures to instantly spike neural alertness and attention.
                           </p>
                         </div>
@@ -1698,41 +2209,104 @@ export default function App() {
                       {/* Habit List Management Header */}
                       <div className="flex items-center justify-between">
                         <div>
-                          <h2 className={`text-base font-display font-extrabold ${darkMode ? 'text-stone-100' : 'text-stone-800'} tracking-tight`}>Active Stack Contracts</h2>
-                          <p className="text-xs text-stone-500">Uncompromising daily behavioral structures</p>
+                          <h2 className={`text-base font-display font-extrabold ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-800'} tracking-tight`}>Active Stack Contracts</h2>
+                          <p className={`text-xs ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'}`}>Uncompromising daily behavioral structures</p>
                         </div>
 
                         <button
                           id="btn-trigger-create-modal"
                           onClick={() => setShowCreateModal(true)}
-                          className="px-4 py-2 bg-[#FF8A3D] hover:bg-[#e77a2f] text-white text-xs font-bold rounded-2xl shadow-premium-orange transition flex items-center gap-1.5 cursor-pointer"
+                          className="px-4 py-2 bg-[#FF7A1A] hover:bg-[#e76b13] text-white text-xs font-bold rounded-2xl shadow-premium-orange transition flex items-center gap-1.5 cursor-pointer"
                         >
                           <Plus className="w-4 h-4" /> Stack Habit
                         </button>
                       </div>
+
+                      {/* Explicit Browser Notification Permission Banner */}
+                      {notificationPermission !== 'granted' && (
+                        <div
+                          id="banner-enable-reminders"
+                          className={`p-4 rounded-2xl border transition flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
+                            darkMode 
+                              ? 'bg-[#1E2836] border-[#FF7A1A]/40 text-[#F8FAFC]' 
+                              : 'bg-orange-50/70 border-orange-200 text-stone-800'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-xl bg-[#EA580C]/15 border border-[#EA580C]/30 flex items-center justify-center shrink-0">
+                              <BellRing className="w-4 h-4 text-[#EA580C]" />
+                            </div>
+                            <div>
+                              <h4 className="text-xs font-bold font-display">Enable Habit Reminders</h4>
+                              <p className={`text-[11px] ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'} leading-normal`}>
+                                Allow device notifications to nudge you when your habit anchor window opens.
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 justify-end">
+                            <button
+                              type="button"
+                              id="btn-test-reminder-alert"
+                              onClick={handleTriggerTestAlert}
+                              className={`px-3 py-2 rounded-xl text-xs font-semibold border transition cursor-pointer ${
+                                darkMode ? 'bg-[#171F2A] hover:bg-[#263242] border-[#334255] text-[#CBD5E1]' : 'bg-white hover:bg-slate-50 border-stone-200 text-stone-700'
+                              }`}
+                              title="Test audio alert chime and notification banner"
+                            >
+                              Test Alert
+                            </button>
+                            <button
+                              type="button"
+                              id="btn-enable-reminders"
+                              onClick={handleAllowSystemAlerts}
+                              className="px-4 py-2 bg-gradient-to-r from-[#EA580C] to-[#FF7A1A] hover:from-orange-600 hover:to-orange-500 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap active:scale-95"
+                            >
+                              🔔 Allow System Alerts
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {notificationPermission === 'granted' && (
+                        <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs">
+                          <span className="flex items-center gap-1.5 font-semibold">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                            🔔 System alerts active &amp; scheduled to OS clock
+                          </span>
+                          <button
+                            type="button"
+                            id="btn-test-reminder-alert-active"
+                            onClick={handleTriggerTestAlert}
+                            className="px-2.5 py-1 text-[11px] font-bold bg-emerald-500/15 hover:bg-emerald-500/25 rounded-lg border border-emerald-500/30 transition cursor-pointer"
+                          >
+                            Test Alert
+                          </button>
+                        </div>
+                      )}
 
                       {/* Render habits list */}
                       {habits.filter(h => !h.isArchived).length > 0 ? (
                         <div className="space-y-3" id="active-habits-list-frame">
                           {habits
                             .filter(h => !h.isArchived)
-                            .map(habit => (
+                            .map((habit, idx) => (
                               <HabitCard
-                                key={habit.id}
+                                key={`habit-${habit.id}-${idx}`}
                                 habit={habit}
                                 selectedDate={selectedDate}
                                 onToggleComplete={handleToggleComplete}
                                 onDelete={handleDeleteHabit}
+                                onReschedule={handleRescheduleHabit}
                               />
                             ))}
                         </div>
                       ) : (
                         <div className={`py-12 text-center border-2 border-dashed ${
-                          darkMode ? 'border-stone-800 bg-stone-900/30' : 'border-stone-200 bg-white'
+                          darkMode ? 'border-[#263242] bg-[#171F2A]/40' : 'border-stone-200 bg-white'
                         } rounded-[32px] p-8`}>
-                          <AlertCircle className="w-8 h-8 text-neutral-300 mx-auto mb-2 animate-bounce" />
-                          <h3 className={`font-bold ${darkMode ? 'text-stone-200' : 'text-stone-800'} text-sm`}>No Active Habit Stacks</h3>
-                          <p className="text-xs text-stone-500 mt-1 max-w-xs mx-auto">
+                          <AlertCircle className="w-8 h-8 text-neutral-400 dark:text-neutral-500 mx-auto mb-2 animate-bounce" />
+                          <h3 className={`font-bold ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-800'} text-sm`}>No Active Habit Stacks</h3>
+                          <p className={`text-xs ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'} mt-1 max-w-xs mx-auto`}>
                             Behavioral psychology suggests starting with tiny 2-minute habits. Click &ldquo;Stack Habit&rdquo; above to structure your first contract!
                           </p>
                         </div>
@@ -1742,19 +2316,19 @@ export default function App() {
                     {/* Right Column: Daily To-Do List (5 cols) */}
                     <div className="lg:col-span-5 space-y-4">
                       <div className={`p-6 rounded-[32px] border ${
-                        darkMode ? 'bg-stone-900 border-stone-800 text-stone-100' : 'bg-white border-stone-100 text-stone-800'
+                        darkMode ? 'bg-[#171F2A] border-[#263242] text-[#F8FAFC]' : 'bg-white border-stone-100 text-stone-800'
                       } shadow-premium flex flex-col h-full`} id="todo-list-bento-node">
                         
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
-                            <ListTodo className="w-5 h-5 text-[#FF8A3D]" />
+                            <ListTodo className="w-5 h-5 text-[#FF7A1A]" />
                             <h2 className="text-base font-display font-extrabold tracking-tight">Daily Action List</h2>
                           </div>
-                          <span className="text-[10px] bg-orange-100 dark:bg-orange-950/40 text-[#FF8A3D] font-bold px-2 py-0.5 rounded-full font-mono">
+                          <span className="text-[10px] bg-orange-50 dark:bg-[rgba(255,122,26,0.15)] text-[#FF7A1A] dark:text-[#FFB074] border border-orange-200 dark:border-[rgba(255,122,26,0.35)] font-bold px-2 py-0.5 rounded-full font-mono">
                             +{todos.filter(t => !t.completed).length * 15} XP POTENTIAL
                           </span>
                         </div>
-                        <p className="text-xs text-stone-500 mb-4 leading-relaxed">
+                        <p className={`text-xs ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'} mb-4 leading-relaxed`}>
                           Doctor Gethro encourages listing immediate everyday actions alongside your identity habits to cement cognitive completion.
                         </p>
 
@@ -1775,15 +2349,15 @@ export default function App() {
                             name="todoText"
                             type="text"
                             placeholder="Add everyday action node..."
-                            className={`flex-1 px-3.5 py-2 text-xs rounded-2xl border ${
+                            className={`flex-1 px-3.5 py-2 text-xs rounded-2xl border transition ${
                               darkMode 
-                                ? 'bg-stone-800 border-stone-700 text-stone-100 placeholder-stone-500 focus:border-[#FF8A3D]' 
-                                : 'bg-[#FEFAF7] border-stone-200 text-stone-800 placeholder-stone-400 focus:border-[#FF8A3D]'
-                            } focus:outline-none transition`}
+                                ? 'bg-[#1E2836] border-[#334255] text-[#F8FAFC] placeholder:text-[#64748B] focus:border-[#EA580C] focus:ring-2 focus:ring-[#EA580C]' 
+                                : 'bg-white border-[#CBD5E1] text-[#0F172A] placeholder:text-[#64748B] focus:border-[#EA580C] focus:ring-2 focus:ring-[#EA580C]'
+                            } focus:outline-none`}
                           />
                           <button 
                             type="submit"
-                            className="px-3.5 bg-[#FF8A3D] text-white hover:bg-[#e77a2f] rounded-2xl text-xs font-bold transition flex items-center justify-center cursor-pointer"
+                            className="px-3.5 bg-[#EA580C] text-white hover:bg-orange-600 rounded-2xl text-xs font-bold transition flex items-center justify-center cursor-pointer shadow-xs"
                           >
                             <Plus className="w-4 h-4" />
                           </button>
@@ -1792,13 +2366,13 @@ export default function App() {
                         {/* Todos Items */}
                         <div className="space-y-2.5 max-h-[320px] overflow-y-auto pr-1">
                           {todos.length > 0 ? (
-                            todos.map(todo => (
+                            todos.map((todo, idx) => (
                               <div 
-                                key={todo.id}
+                                key={`todo-${todo.id}-${idx}`}
                                 className={`p-3 rounded-2xl border ${
                                   todo.completed 
-                                    ? (darkMode ? 'bg-stone-900/40 border-stone-800/50 opacity-60' : 'bg-[#F5F1EE] border-stone-100 opacity-70')
-                                    : (darkMode ? 'bg-stone-800/40 border-stone-800' : 'bg-[#FEFAF7] border-stone-100/60')
+                                    ? (darkMode ? 'bg-[#0F141C]/60 border-[#263242]/50 opacity-60' : 'bg-stone-100/70 border-stone-200/50 opacity-70')
+                                    : (darkMode ? 'bg-[#1E2836] border-[#334255]' : 'bg-white border-stone-200/60 shadow-2xs')
                                 } transition flex flex-col gap-1.5 group`}
                               >
                                 <div className="flex items-start justify-between gap-2">
@@ -1808,20 +2382,21 @@ export default function App() {
                                       checked={todo.completed}
                                       onChange={(e) => {
                                         if (!todo.completed) {
+                                          const nativeMouse = e.nativeEvent as unknown as MouseEvent;
                                           const splashEvent = new CustomEvent('somatic-dopamine-splash', {
                                             detail: { 
-                                              x: e.nativeEvent.clientX || e.clientX || window.innerWidth / 2, 
-                                              y: e.nativeEvent.clientY || e.clientY || window.innerHeight / 2 
+                                              x: nativeMouse.clientX || window.innerWidth / 2, 
+                                              y: nativeMouse.clientY || window.innerHeight / 2 
                                             }
                                           });
                                           window.dispatchEvent(splashEvent);
                                         }
                                         handleToggleTodo(todo.id);
                                       }}
-                                      className="mt-0.5 rounded text-[#FF8A3D] focus:ring-[#FF8A3D] border-stone-300 w-4 h-4 shrink-0"
+                                      className="mt-0.5 rounded text-[#EA580C] focus:ring-[#EA580C] border-[#CBD5E1] dark:border-[#334255] dark:bg-[#0F141C] w-4 h-4 shrink-0"
                                     />
                                     <span className={`text-xs font-medium leading-tight ${
-                                      todo.completed ? 'line-through text-stone-400' : (darkMode ? 'text-stone-200' : 'text-stone-700')
+                                      todo.completed ? 'line-through text-stone-400 dark:text-[#94A3B8] decoration-slate-400 dark:decoration-[#94A3B8]/60' : (darkMode ? 'text-[#F8FAFC]' : 'text-[#0F172A]')
                                     } break-words`}>
                                       {todo.text}
                                     </span>
@@ -1837,7 +2412,7 @@ export default function App() {
                                 
                                 {/* Dr. Gethro encouragement note */}
                                 {!todo.completed && todo.encouragement && (
-                                  <div className="pl-6 text-[10px] text-[#FF8A3D]/90 font-medium italic leading-normal flex items-start gap-1">
+                                  <div className="pl-6 text-[10px] text-[#FF7A1A] dark:text-[#FFB074] font-medium italic leading-normal flex items-start gap-1">
                                     <span className="shrink-0">💡</span>
                                     <span>Gethro: &ldquo;{todo.encouragement}&rdquo;</span>
                                   </div>
@@ -1845,7 +2420,7 @@ export default function App() {
                               </div>
                             ))
                           ) : (
-                            <div className="py-8 text-center text-stone-400 text-xs">
+                            <div className={`py-8 text-center ${darkMode ? 'text-[#64748B]' : 'text-stone-400'} text-xs`}>
                               No daily actions listed. Add one above!
                             </div>
                           )}
@@ -1853,11 +2428,11 @@ export default function App() {
 
                         {/* Completion counter bar */}
                         {todos.length > 0 && (
-                          <div className="mt-4 pt-3 border-t border-stone-150 flex items-center justify-between text-[11px] font-medium text-stone-500">
+                          <div className={`mt-4 pt-3 border-t ${darkMode ? 'border-[#263242] text-[#94A3B8]' : 'border-stone-150 text-stone-500'} flex items-center justify-between text-[11px] font-medium`}>
                             <span>
                               Completed {todos.filter(t => t.completed).length}/{todos.length} Action Nodes
                             </span>
-                            <span className="text-[#FF8A3D] font-mono">
+                            <span className="text-[#FF7A1A] dark:text-[#FFB074] font-mono">
                               +{todos.filter(t => t.completed).length * 15} XP claimed
                             </span>
                           </div>
@@ -1878,11 +2453,11 @@ export default function App() {
 
                   {/* Cognitive Science Template library */}
                   <div className={`p-6 rounded-[32px] border ${
-                    darkMode ? 'bg-stone-900 border-stone-800' : 'bg-white border-stone-100'
+                    darkMode ? 'bg-[#171F2A] border-[#263242]' : 'bg-white border-stone-100'
                   } shadow-premium transition-colors`}>
                     <div className="flex items-center gap-2 mb-4">
-                      <BookOpen className="w-5 h-5 text-[#FF8A3D]" />
-                      <h3 className={`font-bold ${darkMode ? 'text-stone-100' : 'text-stone-800'} text-sm`}>Cognitive Science Prescription Templates</h3>
+                      <BookOpen className="w-5 h-5 text-[#FF7A1A]" />
+                      <h3 className={`font-bold ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-800'} text-sm`}>Cognitive Science Prescription Templates</h3>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -1892,19 +2467,19 @@ export default function App() {
                         { title: 'Executive Journaling', cat: 'productivity' as const, trigger: 'close my daytime laptop', principle: 'Identity Shift' as const, diff: 'medium' as const, xp: 45, desc: 'Log 3 priority blocks for tomorrow' }
                       ].map((temp, i) => (
                         <div key={i} className={`p-4 ${
-                          darkMode ? 'bg-stone-800/50 border-stone-800 hover:border-orange-500/40 hover:bg-stone-800' : 'bg-[#F5F1EE] border-stone-100 hover:border-orange-200 hover:bg-orange-50/20'
-                        } border rounded-[24px] transition flex flex-col justify-between`}>
+                          darkMode ? 'bg-[#1E2836] border-[#334255] hover:border-[#FF7A1A]/40' : 'bg-gradient-to-br from-stone-50 to-orange-50/20 border-stone-200/70 hover:border-orange-300 hover:bg-orange-50/30'
+                        } border rounded-[24px] transition flex flex-col justify-between shadow-2xs`}>
                           <div>
-                            <span className="text-[10px] bg-orange-50 dark:bg-orange-950/20 text-orange-600 px-2 py-0.5 rounded font-mono font-bold uppercase tracking-wider">{temp.principle}</span>
-                            <h4 className={`font-bold ${darkMode ? 'text-stone-100' : 'text-stone-800'} text-xs mt-2`}>{temp.title}</h4>
-                            <p className="text-[10px] text-stone-500 mt-1 leading-normal">{temp.desc}</p>
+                            <span className="text-[10px] bg-orange-50 dark:bg-[rgba(255,122,26,0.15)] text-orange-700 dark:text-[#FFB074] border border-orange-200 dark:border-[rgba(255,122,26,0.35)] px-2 py-0.5 rounded font-mono font-bold uppercase tracking-wider">{temp.principle}</span>
+                            <h4 className={`font-bold ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-800'} text-xs mt-2`}>{temp.title}</h4>
+                            <p className={`text-[10px] ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'} mt-1 leading-normal`}>{temp.desc}</p>
                           </div>
                           <button
                             id={`btn-add-template-${i}`}
                             onClick={() => handleAddTemplate(temp.title, temp.cat, temp.trigger, temp.principle, temp.diff, temp.xp)}
-                            className={`mt-4 w-full py-1.5 bg-white dark:bg-stone-900 border ${
-                              darkMode ? 'border-stone-700 hover:border-[#FF8A3D] text-orange-400' : 'border-stone-200 hover:border-[#FF8A3D] text-[#FF8A3D]'
-                            } hover:bg-[#FF8A3D] hover:text-white text-[10px] font-bold rounded-xl shadow-sm transition cursor-pointer`}
+                            className={`mt-4 w-full py-1.5 bg-white dark:bg-[#171F2A] border ${
+                              darkMode ? 'border-[#334255] hover:border-[#FF7A1A] text-[#FFB074]' : 'border-stone-200 hover:border-orange-500 text-orange-600'
+                            } hover:bg-gradient-to-r hover:from-[#FF7A1A] hover:to-[#F59E0B] hover:text-white text-[10px] font-bold rounded-xl shadow-xs transition cursor-pointer`}
                           >
                             + Quick Stack
                           </button>
@@ -1922,6 +2497,7 @@ export default function App() {
                   userProfile={profile} 
                   habits={habits} 
                   onAddInsightXP={addXPForInsight}
+                  darkMode={darkMode}
                 />
               )}
 
@@ -1931,6 +2507,7 @@ export default function App() {
                   habits={habits} 
                   userProfile={profile} 
                   stats={stats} 
+                  darkMode={darkMode}
                 />
               )}
 
@@ -1939,6 +2516,7 @@ export default function App() {
                 <Gamification 
                   stats={stats} 
                   onClaimChallengeXP={handleClaimChallengeXP} 
+                  darkMode={darkMode}
                 />
               )}
 
@@ -1989,21 +2567,23 @@ export default function App() {
               initial={{ scale: 0.95, y: 10 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.95, y: 10 }}
-              className="bg-white rounded-[32px] p-6 sm:p-8 max-w-md w-full shadow-2xl border border-stone-100 relative overflow-hidden"
+              className={`rounded-[32px] p-6 sm:p-8 max-w-md w-full shadow-2xl border relative overflow-hidden ${
+                darkMode ? 'bg-[#212C3C] border-[#334255] text-[#F8FAFC]' : 'bg-white border-stone-100 text-stone-900'
+              }`}
               id="habit-create-modal-content"
             >
               {/* Decorative accent top bar */}
-              <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-orange-500 via-[#FF8A3D] to-amber-500" />
+              <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-[#FF7A1A] via-[#FF923E] to-[#F59E0B]" />
               
               <div className="mb-4">
-                <span className="text-[10px] text-[#FF8A3D] font-mono font-bold bg-orange-50 px-2 py-0.5 rounded uppercase">Tiny Habits Contract Builder</span>
-                <h3 className="text-xl font-display font-extrabold text-stone-900 mt-2">Construct New Habit Loop</h3>
+                <span className="text-[10px] text-[#FF7A1A] dark:text-[#FFB074] font-mono font-bold bg-orange-50 dark:bg-[rgba(255,122,26,0.15)] border border-orange-200 dark:border-[rgba(255,122,26,0.35)] px-2 py-0.5 rounded uppercase">Tiny Habits Contract Builder</span>
+                <h3 className={`text-xl font-display font-extrabold ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-900'} mt-2`}>Construct New Habit Loop</h3>
               </div>
 
               <form onSubmit={handleCreateHabit} className="space-y-4">
                 {/* Name */}
                 <div>
-                  <label htmlFor="modal-new-habit-name" className="block text-xs font-semibold text-stone-600 mb-1">What small habit would you like to build?</label>
+                  <label htmlFor="modal-new-habit-name" className={`block text-xs font-semibold ${darkMode ? 'text-[#F8FAFC]' : 'text-[#0F172A]'} mb-1.5`}>What small habit would you like to build?</label>
                   <input
                     id="modal-new-habit-name"
                     type="text"
@@ -2011,14 +2591,16 @@ export default function App() {
                     value={newHabitName}
                     onChange={(e) => setNewHabitName(e.target.value)}
                     placeholder="e.g. Read 5 pages, stretch for 2 minutes, drink a glass of water"
-                    className="w-full px-3.5 py-2.5 bg-[#FEFAF7] border border-stone-200 rounded-2xl text-xs text-stone-800 placeholder-stone-400 focus:outline-none focus:border-[#FF8A3D] focus:bg-white transition"
+                    className={`w-full px-4 py-3 rounded-2xl text-xs transition border focus:outline-none focus:ring-2 focus:ring-[#EA580C] focus:border-[#EA580C] ${
+                      darkMode ? 'bg-[#0F141C] border-[#334255] text-[#F8FAFC] placeholder:text-[#64748B]' : 'bg-white border-[#CBD5E1] text-[#0F172A] placeholder:text-[#64748B]'
+                    }`}
                   />
                 </div>
 
                 {/* Trigger */}
                 <div>
-                  <label htmlFor="modal-new-habit-trigger" className="block text-xs font-semibold text-stone-600 mb-1">What do you already do every day that can remind you to do it?</label>
-                  <p className="text-[10px] text-stone-400 mb-1.5 leading-normal">
+                  <label htmlFor="modal-new-habit-trigger" className={`block text-xs font-semibold ${darkMode ? 'text-[#F8FAFC]' : 'text-[#0F172A]'} mb-1.5`}>What do you already do every day that can remind you to do it?</label>
+                  <p className={`text-[10px] ${darkMode ? 'text-[#94A3B8]' : 'text-[#64748B]'} mb-2 leading-normal`}>
                     An existing daily routine you already do automatically (like brushing teeth, finishing breakfast, or sitting down at your desk) that will remind you to do this new habit.
                   </p>
                   <input
@@ -2028,91 +2610,95 @@ export default function App() {
                     value={newHabitTrigger}
                     onChange={(e) => setNewHabitTrigger(e.target.value)}
                     placeholder="e.g. Brush my teeth, finish breakfast, sit down at my desk"
-                    className="w-full px-3.5 py-2.5 bg-[#FEFAF7] border border-stone-200 rounded-2xl text-xs text-stone-800 placeholder-stone-400 focus:outline-none focus:border-[#FF8A3D] focus:bg-white transition"
+                    className={`w-full px-4 py-3 rounded-2xl text-xs transition border focus:outline-none focus:ring-2 focus:ring-[#EA580C] focus:border-[#EA580C] ${
+                      darkMode ? 'bg-[#0F141C] border-[#334255] text-[#F8FAFC] placeholder:text-[#64748B]' : 'bg-white border-[#CBD5E1] text-[#0F172A] placeholder:text-[#64748B]'
+                    }`}
                   />
                 </div>
 
-                {/* Categories and Principles row */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label htmlFor="modal-new-habit-category" className="block text-xs font-semibold text-stone-500 mb-1">CATEGORY</label>
-                    <select
-                      id="modal-new-habit-category"
-                      value={newHabitCategory}
-                      onChange={(e) => setNewHabitCategory(e.target.value as HabitCategory)}
-                      className="w-full px-3 py-2 bg-[#FEFAF7] border border-stone-200 rounded-2xl text-xs text-stone-800 focus:outline-none focus:border-[#FF8A3D] cursor-pointer"
-                    >
-                      <option value="productivity">Productivity</option>
-                      <option value="mindfulness">Mindfulness</option>
-                      <option value="health">Health & Wellness</option>
-                      <option value="fitness">Fitness</option>
-                      <option value="learning">Learning</option>
-                      <option value="social">Social</option>
-                      <option value="finance">Finance</option>
-                    </select>
-                  </div>
+                {/* Single Clean Category Dropdown */}
+                <div>
+                  <label htmlFor="modal-new-habit-category" className={`block text-xs font-semibold ${darkMode ? 'text-[#94A3B8]' : 'text-[#334155]'} mb-1.5`}>Category</label>
+                  <select
+                    id="modal-new-habit-category"
+                    value={newHabitCategory}
+                    onChange={(e) => setNewHabitCategory(e.target.value as HabitCategory)}
+                    className={`w-full px-4 py-3 rounded-2xl text-xs transition border focus:outline-none focus:ring-2 focus:ring-[#EA580C] focus:border-[#EA580C] cursor-pointer ${
+                      darkMode ? 'bg-[#0F141C] border-[#334255] text-[#F8FAFC]' : 'bg-white border-[#CBD5E1] text-[#0F172A]'
+                    }`}
+                  >
+                    <option value="productivity">Productivity</option>
+                    <option value="mindfulness">Mindfulness</option>
+                    <option value="health">Health &amp; Wellness</option>
+                    <option value="fitness">Fitness</option>
+                    <option value="learning">Learning</option>
+                    <option value="social">Social</option>
+                    <option value="finance">Finance</option>
+                  </select>
+                </div>
 
-                  <div>
-                    <label htmlFor="modal-new-habit-principle" className="block text-xs font-semibold text-stone-500 mb-1">PSYCH PRINCIPLE</label>
-                    <select
-                      id="modal-new-habit-principle"
-                      value={newHabitPrinciple}
-                      onChange={(e) => setNewHabitPrinciple(e.target.value as PsychologicalPrinciple)}
-                      className="w-full px-3 py-2 bg-[#FEFAF7] border border-stone-200 rounded-2xl text-xs text-stone-800 focus:outline-none focus:border-[#FF8A3D] cursor-pointer"
-                    >
-                      <option value="Habit Stacking">Habit Stacking</option>
-                      <option value="Friction Reduction">Friction Reduction</option>
-                      <option value="Temptation Bundling">Temptation Bundling</option>
-                      <option value="Identity Shift">Identity Shift</option>
-                      <option value="Implementation Intention">Implementation Intention</option>
-                      <option value="Instant Reward">Instant Reward</option>
-                    </select>
+                {/* Difficulty Selector Chips with Estimated Durations */}
+                <div>
+                  <label className={`block text-xs font-semibold ${darkMode ? 'text-[#94A3B8]' : 'text-[#334155]'} mb-1.5`}>
+                    Difficulty Level
+                  </label>
+                  <div className="grid grid-cols-3 gap-2.5">
+                    {(['easy', 'medium', 'hard'] as const).map((diff) => {
+                      const isSelected = newHabitDifficulty === diff;
+                      const label = diff === 'easy' ? 'Quick (< 2m)' : diff === 'medium' ? 'Medium (5-15m)' : 'Deep Focus (30m+)';
+                      return (
+                        <button
+                          key={diff}
+                          type="button"
+                          onClick={() => setNewHabitDifficulty(diff)}
+                          className={`py-3 px-4 rounded-2xl text-xs font-bold transition-all border cursor-pointer text-center ${
+                            isSelected
+                              ? 'bg-[#EA580C] border-[#EA580C] text-white shadow-xs ring-2 ring-orange-500/20'
+                              : darkMode
+                                ? 'bg-[#171F2A] hover:bg-[#1E2836] text-[#E4E4E7] border-[#334255]'
+                                : 'bg-[#F1F5F9] hover:bg-slate-200/80 text-[#334155] border-[#CBD5E1]'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
-                {/* Difficulty and Time row */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label htmlFor="modal-new-habit-difficulty" className="block text-xs font-semibold text-stone-500 mb-1">DIFFICULTY</label>
-                    <select
-                      id="modal-new-habit-difficulty"
-                      value={newHabitDifficulty}
-                      onChange={(e) => setNewHabitDifficulty(e.target.value as any)}
-                      className="w-full px-3 py-2 bg-[#FEFAF7] border border-stone-200 rounded-2xl text-xs text-stone-800 focus:outline-none focus:border-[#FF8A3D] cursor-pointer"
-                    >
-                      <option value="easy">Easy (+30 XP)</option>
-                      <option value="medium">Medium (+45 XP)</option>
-                      <option value="hard">Hard (+60 XP)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label htmlFor="modal-new-habit-reminder" className="block text-xs font-semibold text-stone-500 mb-1">REMINDER NODE</label>
-                    <input
-                      id="modal-new-habit-reminder"
-                      type="time"
-                      value={newHabitReminder}
-                      onChange={(e) => setNewHabitReminder(e.target.value)}
-                      className="w-full px-3 py-2 bg-[#FEFAF7] border border-stone-200 rounded-2xl text-xs text-stone-800 focus:outline-none"
-                    />
-                  </div>
+                {/* Reminder Time */}
+                <div>
+                  <label htmlFor="modal-new-habit-reminder" className={`block text-xs font-semibold ${darkMode ? 'text-[#94A3B8]' : 'text-[#334155]'} mb-1.5`}>Reminder Time</label>
+                  <input
+                    id="modal-new-habit-reminder"
+                    type="time"
+                    value={newHabitReminder}
+                    onChange={(e) => setNewHabitReminder(e.target.value)}
+                    className={`w-full px-4 py-3 rounded-2xl text-xs transition border focus:outline-none focus:ring-2 focus:ring-[#EA580C] focus:border-[#EA580C] ${
+                      darkMode ? 'bg-[#0F141C] border-[#334255] text-[#F8FAFC]' : 'bg-white border-[#CBD5E1] text-[#0F172A]'
+                    }`}
+                  />
                 </div>
 
                 {/* Optional Custom Description */}
                 <div>
-                  <label htmlFor="modal-new-habit-description" className="block text-xs font-semibold text-stone-500 mb-1">CUSTOM DESCRIPTION / NOTES (OPTIONAL)</label>
+                  <label htmlFor="modal-new-habit-description" className={`block text-xs font-semibold ${darkMode ? 'text-[#94A3B8]' : 'text-[#334155]'} mb-1.5`}>Custom Description / Notes (Optional)</label>
                   <textarea
                     id="modal-new-habit-description"
                     rows={2}
                     value={newHabitDesc}
                     onChange={(e) => setNewHabitDesc(e.target.value)}
                     placeholder="Provide a subtle identity motivation..."
-                    className="w-full px-3.5 py-2 bg-[#FEFAF7] border border-stone-200 rounded-2xl text-xs text-stone-800 placeholder-stone-400 focus:outline-none focus:border-[#FF8A3D] resize-none"
+                    className={`w-full px-4 py-3 rounded-2xl text-xs placeholder:text-[#64748B] focus:outline-none focus:ring-2 focus:ring-[#EA580C] focus:border-[#EA580C] resize-none transition border ${
+                      darkMode ? 'bg-[#0F141C] border-[#334255] text-[#F8FAFC]' : 'bg-white border-[#CBD5E1] text-[#0F172A]'
+                    }`}
                   />
                 </div>
 
                 {newHabitName && newHabitTrigger && (
-                  <div className="p-3 bg-orange-50 border border-orange-100 rounded-2xl text-[11px] text-[#FF8A3D] font-medium leading-relaxed">
+                  <div className={`p-3 rounded-2xl text-[11px] font-medium leading-relaxed ${
+                    darkMode ? 'bg-[rgba(249,115,22,0.15)] border border-[rgba(249,115,22,0.35)] text-[#FB923C]' : 'bg-orange-50 border border-orange-200 text-[#EA580C]'
+                  }`}>
                     💡 <strong>Your Stack Formulation:</strong> &ldquo;After I <strong>{newHabitTrigger}</strong>, I will <strong>{newHabitName}</strong>.&rdquo;
                   </div>
                 )}
@@ -2123,14 +2709,14 @@ export default function App() {
                     id="btn-cancel-create-habit"
                     type="button"
                     onClick={() => setShowCreateModal(false)}
-                    className="px-4 py-2.5 text-xs text-stone-500 hover:text-stone-700 transition font-bold cursor-pointer"
+                    className={`px-4 py-2.5 text-xs ${darkMode ? 'text-[#94A3B8] hover:text-[#F8FAFC]' : 'text-[#64748B] hover:text-[#0F172A]'} transition font-bold cursor-pointer`}
                   >
                     Cancel
                   </button>
                   <button
                     id="btn-submit-create-habit"
                     type="submit"
-                    className="px-6 py-2.5 bg-[#FF8A3D] hover:bg-[#e77a2f] text-white text-xs font-bold rounded-2xl transition shadow-premium-orange cursor-pointer"
+                    className="px-6 py-2.5 bg-[#EA580C] hover:bg-orange-600 text-white text-xs font-bold rounded-2xl transition shadow-premium-orange cursor-pointer"
                   >
                     Commit Contract
                   </button>
@@ -2146,7 +2732,7 @@ export default function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-stone-900/60 backdrop-blur-md flex items-center justify-center p-4 z-50"
+            className="fixed inset-0 bg-stone-950/70 backdrop-blur-md flex items-center justify-center p-4 z-50"
             onClick={() => setShowBravoPopup(false)}
           >
             <motion.div
@@ -2157,37 +2743,37 @@ export default function App() {
               transition={{ type: 'spring', duration: 0.5 }}
               onClick={(e) => e.stopPropagation()}
               className={`w-full max-w-md p-6 sm:p-8 rounded-[36px] border ${
-                darkMode ? 'bg-stone-900 border-stone-800 text-stone-100' : 'bg-white border-orange-100 text-stone-800'
+                darkMode ? 'bg-[#212C3C] border-[#334255] text-[#F8FAFC]' : 'bg-white border-orange-100 text-stone-800'
               } shadow-2xl relative overflow-hidden`}
             >
               {/* Abstract orange background burst */}
-              <div className="absolute top-0 right-0 w-32 h-32 bg-orange-100/10 dark:bg-orange-950/10 rounded-full blur-2xl pointer-events-none" />
+              <div className="absolute top-0 right-0 w-32 h-32 bg-orange-100/10 dark:bg-[#FF7A1A]/10 rounded-full blur-2xl pointer-events-none" />
               
               <div className="flex flex-col items-center text-center">
                 {/* Pop trophy animation ring */}
-                <div className="w-16 h-16 bg-orange-100 dark:bg-orange-950/30 text-[#FF8A3D] rounded-full flex items-center justify-center mb-4 shadow-lg shadow-orange-100/50 dark:shadow-none animate-bounce">
+                <div className="w-16 h-16 bg-orange-100 dark:bg-[rgba(255,122,26,0.18)] text-[#FF7A1A] dark:text-[#FFB074] border border-orange-200 dark:border-[rgba(255,122,26,0.35)] rounded-full flex items-center justify-center mb-4 shadow-lg shadow-orange-100/50 dark:shadow-none animate-bounce">
                   <Trophy className="w-8 h-8" />
                 </div>
 
-                <span className="text-[10px] font-mono font-bold text-orange-500 uppercase tracking-wider mb-1.5">BEHAVIORAL MILESTONE DETECTED</span>
+                <span className="text-[10px] font-mono font-bold text-[#FF7A1A] dark:text-[#FFB074] uppercase tracking-wider mb-1.5">BEHAVIORAL MILESTONE DETECTED</span>
                 
-                <h3 className={`text-2xl font-display font-black tracking-tight mb-3 ${darkMode ? 'text-white' : 'text-stone-900'}`}>
+                <h3 className={`text-2xl font-display font-black tracking-tight mb-3 ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-900'}`}>
                   {profile?.identityAnchor ? 'Identity Reinforced! 🛡️' : 'Bravo! 🎉'}
                 </h3>
 
-                <p className={`text-xs ${darkMode ? 'text-stone-300' : 'text-stone-600'} leading-relaxed mb-5`}>
+                <p className={`text-xs ${darkMode ? 'text-[#94A3B8]' : 'text-stone-600'} leading-relaxed mb-5`}>
                   {bravoMessage}
                 </p>
 
                 {/* Cognitive Science Writeup Beneath */}
                 <div className={`w-full p-4 rounded-2xl border mb-6 text-left ${
-                  darkMode ? 'bg-stone-800/40 border-stone-750' : 'bg-orange-50/30 border-orange-100/50'
+                  darkMode ? 'bg-[#171F2A] border-[#334255]' : 'bg-orange-50/30 border-orange-100/50'
                 }`}>
                   <div className="flex gap-2 items-start">
                     <span className="text-sm">💡</span>
                     <div>
-                      <h4 className="text-[11px] font-bold text-[#FF8A3D] uppercase tracking-wider">Doctor Gethro&apos;s Principle</h4>
-                      <p className={`text-[11px] font-medium leading-normal mt-0.5 ${darkMode ? 'text-stone-400' : 'text-stone-600'}`}>
+                      <h4 className="text-[11px] font-bold text-[#FF7A1A] dark:text-[#FFB074] uppercase tracking-wider">Doctor Gethro&apos;s Principle</h4>
+                      <p className={`text-[11px] font-medium leading-normal mt-0.5 ${darkMode ? 'text-[#94A3B8]' : 'text-stone-600'}`}>
                         Consistency to finishing your tasks is key. Small victories repeated daily compound exponentially, establishing the identity shifting habits of peak performers.
                       </p>
                     </div>
@@ -2197,7 +2783,7 @@ export default function App() {
                 <button
                   id="btn-dismiss-bravo"
                   onClick={() => setShowBravoPopup(false)}
-                  className="w-full py-3 bg-[#FF8A3D] hover:bg-[#e77a2f] text-white text-xs font-bold rounded-2xl transition shadow-premium-orange cursor-pointer"
+                  className="w-full py-3 bg-[#FF7A1A] hover:bg-[#e76b13] text-white text-xs font-bold rounded-2xl transition shadow-premium-orange cursor-pointer"
                 >
                   Anchor This Victory
                 </button>
@@ -2225,7 +2811,7 @@ export default function App() {
               transition={{ type: 'spring', stiffness: 350, damping: 25 }}
               className={`w-full max-w-lg rounded-[36px] overflow-hidden border p-8 flex flex-col relative text-center shadow-2xl transition-all ${
                 darkMode 
-                  ? 'bg-stone-900 border-stone-800 text-stone-100' 
+                  ? 'bg-[#212C3C] border-[#334255] text-[#F8FAFC]' 
                   : 'bg-[#FEFAF7] border-orange-100 text-stone-850'
               }`}
             >
@@ -2234,7 +2820,7 @@ export default function App() {
                 onClick={() => setCompletionFlow(null)}
                 className={`absolute top-6 right-6 p-2 rounded-full border transition cursor-pointer ${
                   darkMode 
-                    ? 'border-stone-800 bg-stone-850 hover:bg-stone-800 text-stone-400 hover:text-stone-200' 
+                    ? 'border-[#334255] bg-[#1E2836] hover:bg-[#171F2A] text-[#94A3B8] hover:text-[#F8FAFC]' 
                     : 'border-orange-100 bg-white hover:bg-stone-50 text-stone-500 hover:text-stone-850'
                 }`}
               >
@@ -2244,35 +2830,35 @@ export default function App() {
               {/* STAGE 1: Confirm Completion */}
               {completionFlow.stage === 'confirm' && (
                 <div className="flex flex-col items-center">
-                  <div className="w-16 h-16 bg-orange-100/60 dark:bg-orange-950/20 rounded-full flex items-center justify-center text-[#FF8A3D] mb-5">
+                  <div className="w-16 h-16 bg-orange-100/60 dark:bg-[rgba(255,122,26,0.18)] border border-orange-200 dark:border-[rgba(255,122,26,0.35)] rounded-full flex items-center justify-center text-[#FF7A1A] dark:text-[#FFB074] mb-5">
                     <Sparkles className="w-8 h-8 animate-pulse" />
                   </div>
 
-                  <h3 className="text-xl font-display font-black tracking-tight">
+                  <h3 className={`text-xl font-display font-black tracking-tight ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-900'}`}>
                     Have you completed this habit, {profile?.name}?
                   </h3>
                   
                   <div className={`mt-3 px-5 py-4 rounded-2xl w-full max-w-md border text-left ${
-                    darkMode ? 'bg-stone-850 border-stone-800' : 'bg-white border-orange-100/60'
+                    darkMode ? 'bg-[#171F2A] border-[#334255]' : 'bg-white border-orange-100/60'
                   }`}>
                     <div className="flex items-center gap-1.5 mb-1">
-                      <span className="text-[10px] font-mono font-bold text-orange-500 bg-orange-50 dark:bg-orange-950/20 px-2 py-0.5 rounded uppercase">
+                      <span className="text-[10px] font-mono font-bold text-orange-700 dark:text-[#FFB074] bg-orange-50 dark:bg-[rgba(255,122,26,0.15)] border border-orange-200 dark:border-[rgba(255,122,26,0.35)] px-2 py-0.5 rounded uppercase">
                         {completionFlow.habit.category}
                       </span>
-                      <span className="text-[10px] font-mono font-bold text-[#FF8A3D] bg-orange-50 dark:bg-orange-950/20 px-2 py-0.5 rounded">
+                      <span className="text-[10px] font-mono font-bold text-[#FF7A1A] dark:text-[#FFB074] bg-orange-50 dark:bg-[rgba(255,122,26,0.15)] border border-orange-200 dark:border-[rgba(255,122,26,0.35)] px-2 py-0.5 rounded">
                         +{completionFlow.habit.xpReward} XP
                       </span>
                     </div>
-                    <h4 className="font-extrabold text-sm text-stone-800 dark:text-white">
+                    <h4 className={`font-extrabold text-sm ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-800'}`}>
                       {completionFlow.habit.name}
                     </h4>
-                    <p className="text-xs text-stone-500 mt-1.5 leading-relaxed">
+                    <p className={`text-xs ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'} mt-1.5 leading-relaxed`}>
                       {completionFlow.habit.description}
                     </p>
                   </div>
 
                   {completionFlow.reflectionQuestion && (
-                    <p className="text-xs text-stone-400 dark:text-stone-500 font-medium italic mt-4 max-w-sm">
+                    <p className={`text-xs ${darkMode ? 'text-[#94A3B8]' : 'text-stone-400'} font-medium italic mt-4 max-w-sm`}>
                       💡 {completionFlow.reflectionQuestion}
                     </p>
                   )}
@@ -2433,7 +3019,7 @@ export default function App() {
                           });
                         }
                       }}
-                      className="px-6 py-3.5 bg-[#FF8A3D] hover:bg-[#e77a2f] text-white font-bold rounded-2xl transition shadow-premium-orange flex items-center justify-center gap-2 cursor-pointer text-xs flex-1"
+                      className="px-6 py-3.5 bg-[#FF7A1A] hover:bg-[#e76b13] text-white font-bold rounded-2xl transition shadow-premium-orange flex items-center justify-center gap-2 cursor-pointer text-xs flex-1"
                     >
                       ✅ Completed
                     </button>
@@ -2442,7 +3028,7 @@ export default function App() {
                       onClick={() => setCompletionFlow(null)}
                       className={`px-5 py-3.5 font-bold rounded-2xl border transition cursor-pointer text-xs flex-1 ${
                         darkMode 
-                          ? 'border-stone-800 bg-stone-850 hover:bg-stone-800 text-stone-300' 
+                          ? 'border-[#334255] bg-[#1E2836] hover:bg-[#171F2A] text-[#94A3B8] hover:text-[#F8FAFC]' 
                           : 'border-stone-200 bg-stone-100 hover:bg-stone-200 text-stone-600'
                       }`}
                     >
@@ -2459,17 +3045,17 @@ export default function App() {
                     <BookOpen className="w-8 h-8 animate-pulse" />
                   </div>
 
-                  <h3 className="text-xl font-display font-black tracking-tight">
+                  <h3 className={`text-xl font-display font-black tracking-tight ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-900'}`}>
                     Psychological Memory Recall
                   </h3>
-                  <p className={`text-xs mt-1.5 max-w-sm leading-relaxed ${darkMode ? 'text-stone-400' : 'text-stone-500'}`}>
+                  <p className={`text-xs mt-1.5 max-w-sm leading-relaxed ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'}`}>
                     Dr. Gethro recommends reflecting on your learning to secure neural retention pathways.
                   </p>
 
                   <div className={`mt-6 p-5 rounded-2xl w-full max-w-md border text-left ${
-                    darkMode ? 'bg-stone-850 border-stone-800' : 'bg-white border-orange-100/50'
+                    darkMode ? 'bg-[#171F2A] border-[#334255]' : 'bg-white border-orange-100/50'
                   }`}>
-                    <label htmlFor="recall-textarea" className="block text-[11px] font-mono font-bold text-[#FF8A3D] uppercase tracking-wider mb-2">
+                    <label htmlFor="recall-textarea" className="block text-[11px] font-mono font-bold text-[#FF7A1A] dark:text-[#FFB074] uppercase tracking-wider mb-2">
                       {completionFlow.reflectionQuestion || "What did you learn today?"}
                     </label>
                     <textarea
@@ -2478,13 +3064,13 @@ export default function App() {
                       value={completionFlow.reflectionAnswer || ''}
                       onChange={(e) => setCompletionFlow({ ...completionFlow, reflectionAnswer: e.target.value })}
                       placeholder="e.g. Learned how micro-habits reduce cognitive strain and prevent decision fatigue."
-                      className={`w-full p-3.5 rounded-xl text-xs sm:text-sm transition border font-medium outline-none focus:border-[#FF8A3D] shadow-inner ${
+                      className={`w-full p-3.5 rounded-xl text-xs sm:text-sm transition border font-medium outline-none focus:border-[#FF7A1A] shadow-inner ${
                         darkMode 
-                          ? 'bg-stone-900 border-stone-800 text-stone-100 placeholder:text-stone-500' 
+                          ? 'bg-[#0F141C] border-[#334255] text-[#F8FAFC] placeholder:text-[#64748B]' 
                           : 'bg-white border-stone-200 text-stone-900 placeholder:text-stone-400'
                       }`}
                     />
-                    <div className="w-full flex justify-between items-center text-[10px] font-mono text-stone-500 dark:text-stone-400 px-1 mt-1.5">
+                    <div className="w-full flex justify-between items-center text-[10px] font-mono text-stone-500 dark:text-[#94A3B8] px-1 mt-1.5">
                       <span>Active Memory Recall</span>
                       <span>{(completionFlow.reflectionAnswer || '').length} characters</span>
                     </div>
@@ -2495,7 +3081,7 @@ export default function App() {
                       onClick={() => setCompletionFlow({ ...completionFlow, stage: 'confirm' })}
                       className={`px-5 py-3.5 font-bold rounded-2xl border transition cursor-pointer text-xs flex-1 ${
                         darkMode 
-                          ? 'border-stone-800 bg-stone-850 hover:bg-stone-800 text-stone-400' 
+                          ? 'border-[#334255] bg-[#1E2836] hover:bg-[#171F2A] text-[#94A3B8]' 
                           : 'border-stone-200 bg-stone-100 hover:bg-stone-200 text-stone-600'
                       }`}
                     >
@@ -2510,7 +3096,7 @@ export default function App() {
                           });
                         });
                       }}
-                      className="px-6 py-3.5 bg-[#FF8A3D] hover:bg-[#e77a2f] text-white font-bold rounded-2xl transition shadow-premium-orange flex items-center justify-center gap-2 cursor-pointer text-xs flex-1"
+                      className="px-6 py-3.5 bg-[#FF7A1A] hover:bg-[#e76b13] text-white font-bold rounded-2xl transition shadow-premium-orange flex items-center justify-center gap-2 cursor-pointer text-xs flex-1"
                     >
                       Save Reflection <ChevronRight className="w-4 h-4" />
                     </button>
@@ -2525,10 +3111,10 @@ export default function App() {
                     <Smile className="w-8 h-8 animate-bounce" />
                   </div>
 
-                  <h3 className="text-xl font-display font-black tracking-tight">
+                  <h3 className={`text-xl font-display font-black tracking-tight ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-900'}`}>
                     How did it go, {profile?.name}?
                   </h3>
-                  <p className={`text-xs mt-1.5 max-w-sm leading-relaxed ${darkMode ? 'text-stone-400' : 'text-stone-500'}`}>
+                  <p className={`text-xs mt-1.5 max-w-sm leading-relaxed ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'}`}>
                     We record your emotional feedback separately from completion status to track cognitive energy trends.
                   </p>
 
@@ -2562,20 +3148,20 @@ export default function App() {
                         }}
                         className={`p-4 rounded-3xl border text-left transition duration-300 cursor-pointer flex flex-col justify-between h-28 ${
                           darkMode 
-                            ? 'border-stone-800 bg-stone-850/50 hover:bg-stone-800' 
+                            ? 'border-[#334255] bg-[#171F2A] hover:bg-[#1E2836]' 
                             : 'border-stone-150 bg-white hover:shadow-sm'
                         } ${opt.color}`}
                       >
                         <span className="text-2xl">{opt.emoji}</span>
                         <div>
-                          <h4 className="font-bold text-xs text-stone-800 dark:text-white">{opt.label}</h4>
-                          <p className="text-[10px] text-stone-500 mt-0.5">{opt.desc}</p>
+                          <h4 className={`font-bold text-xs ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-800'}`}>{opt.label}</h4>
+                          <p className={`text-[10px] ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'} mt-0.5`}>{opt.desc}</p>
                         </div>
                       </button>
                     ))}
                   </div>
 
-                  <p className="text-[10px] text-stone-500 dark:text-stone-550 mt-6 max-w-xs font-mono">
+                  <p className={`text-[10px] ${darkMode ? 'text-[#64748B]' : 'text-stone-500'} mt-6 max-w-xs font-mono`}>
                     Choosing a somatic feeling saves this entry to your neural growth database.
                   </p>
                 </div>
@@ -2639,11 +3225,30 @@ export default function App() {
         darkMode={darkMode}
       />
 
+      {/* Grace Shield Recovery Mission Modal */}
+      {stats && (
+        <GraceShieldRecoveryModal
+          isOpen={isRecoveryModalOpen}
+          onClose={() => setIsRecoveryModalOpen(false)}
+          onComplete={handleCompleteRecoveryMission}
+          streakDays={stats.streakDays}
+          identityAnchor={profile?.identityAnchor}
+          darkMode={darkMode}
+        />
+      )}
+
+      {/* Global In-App Toast Notification */}
+      <Toast
+        toast={toast}
+        onClose={() => setToast(null)}
+        darkMode={darkMode}
+      />
+
       {/* Custom Relaunch Confirmation Modal */}
       {showRelaunchConfirmModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-md">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/70 backdrop-blur-md">
           <div className={`w-full max-w-md rounded-3xl p-6 border shadow-2xl space-y-4 ${
-            darkMode ? 'bg-stone-900 border-stone-800 text-stone-100' : 'bg-white border-stone-100 text-stone-900'
+            darkMode ? 'bg-[#212C3C] border-[#334255] text-[#F8FAFC]' : 'bg-white border-stone-100 text-stone-900'
           }`}>
             <div className="flex items-center gap-3">
               <div className="p-3 bg-rose-50 dark:bg-rose-950/40 rounded-2xl border border-rose-100 dark:border-rose-900/50 text-rose-500">
@@ -2651,11 +3256,11 @@ export default function App() {
               </div>
               <div>
                 <h3 className="text-lg font-bold">Relaunch App as New User?</h3>
-                <p className="text-xs text-stone-500 dark:text-stone-400">Reset state & restart onboarding</p>
+                <p className="text-xs text-stone-500 dark:text-[#94A3B8]">Reset state & restart onboarding</p>
               </div>
             </div>
 
-            <p className="text-xs text-stone-600 dark:text-stone-300 leading-relaxed">
+            <p className="text-xs text-stone-600 dark:text-[#94A3B8] leading-relaxed">
               This will clear all current habits, level progress, and AI coach records so you can test and validate the full onboarding experience from scratch.
             </p>
 
@@ -2664,7 +3269,7 @@ export default function App() {
                 type="button"
                 id="btn-confirm-relaunch-cancel"
                 onClick={() => setShowRelaunchConfirmModal(false)}
-                className="flex-1 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 text-xs font-bold hover:bg-stone-100 dark:hover:bg-stone-800 transition cursor-pointer"
+                className="flex-1 py-2.5 rounded-xl border border-stone-200 dark:border-[#334255] text-xs font-bold hover:bg-stone-100 dark:bg-[#1E2836] dark:hover:bg-[#171F2A] dark:text-[#94A3B8] dark:hover:text-[#F8FAFC] transition cursor-pointer"
               >
                 Cancel
               </button>
