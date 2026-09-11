@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" rx="104" fill="#0F172A"/>
+  <circle cx="256" cy="256" r="180" fill="url(#bg_glow)" opacity="0.4"/>
+  <path d="M256 96C256 96 288 176 336 216C376 249 392 291 384 336C374 394 322 432 256 432C190 432 138 394 128 336C120 286 144 240 184 200C184 260 216 288 232 296C248 304 256 296 256 280C256 240 224 192 256 96Z" fill="url(#flame_grad)"/>
+  <path d="M256 240C256 240 272 280 296 300C316 317 324 338 320 361C315 390 289 409 256 409C223 409 197 390 192 361C188 336 200 312 220 292C220 322 236 336 244 340C252 344 256 340 256 332C256 312 240 288 256 240Z" fill="url(#core_grad)"/>
+  <circle cx="360" cy="150" r="16" fill="#FBBF24"/>
+  <defs>
+    <radialGradient id="bg_glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#EA580C" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#0F172A" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="flame_grad" x1="256" y1="96" x2="256" y2="432" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FB923C"/>
+      <stop offset="50%" stop-color="#EA580C"/>
+      <stop offset="100%" stop-color="#C2410C"/>
+    </linearGradient>
+    <linearGradient id="core_grad" x1="256" y1="240" x2="256" y2="409" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FEF08A"/>
+      <stop offset="60%" stop-color="#FBBF24"/>
+      <stop offset="100%" stop-color="#F59E0B"/>
+    </linearGradient>
+  </defs>
+</svg>

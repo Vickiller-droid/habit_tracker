@@ -26,6 +26,7 @@ export interface HabitRecord {
 
 export interface Habit {
   id: string;
+  userId?: string;
   name: string;
   category: HabitCategory;
   frequency: 'daily' | 'weekly' | 'custom';
@@ -49,8 +50,17 @@ export type GrowthPersona =
   | 'The Game Strategist' // Highly motivated by gamification & stats
   | 'The Mindful Observer'; // Focuses on awareness, mood, and reflection
 
+export type UserRole = 'creator' | 'member' | 'guest';
+
 export interface UserProfile {
   name: string;
+  email?: string;
+  avatarUrl?: string;
+  googleId?: string;
+  authProvider?: 'google' | 'guest' | 'local';
+  role?: UserRole;
+  isCreatorAdminEnabled?: boolean;
+  isAuthenticated?: boolean;
   growthPersona: GrowthPersona;
   focusAreas: HabitCategory[];
   quizAnswers: {
@@ -65,6 +75,7 @@ export interface UserProfile {
 }
 
 export interface UserStats {
+  userId?: string;
   xp: number;
   level: number;
   streakMultiplier: number; // e.g. 1.0, 1.2, 1.5 based on perfect days

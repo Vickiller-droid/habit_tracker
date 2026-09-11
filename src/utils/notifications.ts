@@ -143,17 +143,46 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
 }
 
 /**
- * Fire a native system browser notification
+ * Fire a native device system notification (via Service Worker showNotification with vibrate, or direct Notification)
  */
 export function fireBrowserNotification(
   title: string, 
   body: string, 
-  icon?: string, 
-  tag?: string, 
+  icon: string = '/favicon.ico', 
+  tag: string = 'vicfungo-habit-reminder', 
   requireInteraction: boolean = true
 ): boolean {
   if (!isNotificationSupported() || Notification.permission !== 'granted') {
     return false;
+  }
+
+  // Trigger via Service Worker registration if available
+  if ('serviceWorker' in navigator && 'Notification' in window) {
+    navigator.serviceWorker.ready
+      .then(registration => {
+        registration.showNotification(title, {
+          body,
+          icon: icon || '/favicon.ico',
+          badge: icon || '/favicon.ico',
+          tag: tag || 'vicfungo-habit-reminder',
+          vibrate: [200, 100, 200],
+          requireInteraction
+        } as NotificationOptions);
+      })
+      .catch(() => {
+        try {
+          new Notification(title, {
+            body,
+            icon: icon || '/favicon.ico',
+            badge: icon || '/favicon.ico',
+            tag: tag || 'vicfungo-habit-reminder',
+            requireInteraction
+          });
+        } catch (e) {
+          console.warn('Direct notification error:', e);
+        }
+      });
+    return true;
   }
 
   try {
@@ -164,7 +193,6 @@ export function fireBrowserNotification(
       tag: tag || 'vicfungo-habit-reminder',
       requireInteraction
     });
-
     return true;
   } catch (error) {
     console.warn('Failed to display browser notification:', error);
@@ -286,17 +314,43 @@ export function checkAndDispatchDueReminders(
 
         const habitContractTitle = (habit as any).title || habit.name;
         const title = '⏰ Vicfungo Habit Alert';
-        const body = 'Time to complete your contract: ' + habitContractTitle;
+        const body = 'Time to complete your habit contract: ' + habitContractTitle;
 
-        // System-Level Alarm Trigger:
-        // When a habit time matches the system clock, check:
-        if ('Notification' in window && Notification.permission === 'granted') {
+        // Native Device Notifications & Reminder Alarms:
+        // Trigger via service worker registration
+        if ('serviceWorker' in navigator && 'Notification' in window && Notification.permission === 'granted') {
+          navigator.serviceWorker.ready
+            .then(registration => {
+              registration.showNotification('⏰ Vicfungo Habit Alert', {
+                body: 'Time to complete your habit contract: ' + habitContractTitle,
+                icon: '/favicon.ico',
+                badge: '/favicon.ico',
+                tag: habit.id,
+                vibrate: [200, 100, 200],
+                requireInteraction: true
+              } as NotificationOptions);
+            })
+            .catch(() => {
+              try {
+                new Notification('⏰ Vicfungo Habit Alert', {
+                  body: 'Time to complete your habit contract: ' + habitContractTitle,
+                  icon: '/favicon.ico',
+                  badge: '/favicon.ico',
+                  tag: habit.id,
+                  requireInteraction: true
+                });
+              } catch (e) {
+                console.warn('Native system notification error:', e);
+              }
+            });
+        } else if ('Notification' in window && Notification.permission === 'granted') {
           try {
             new Notification('⏰ Vicfungo Habit Alert', {
-              body: 'Time to complete your contract: ' + habitContractTitle,
+              body: 'Time to complete your habit contract: ' + habitContractTitle,
               icon: '/favicon.ico',
-              tag: habit.id, // prevents duplicate stacking
-              requireInteraction: true // keeps the notification visible until interacted with
+              badge: '/favicon.ico',
+              tag: habit.id,
+              requireInteraction: true
             });
           } catch (e) {
             console.warn('Native system notification error:', e);

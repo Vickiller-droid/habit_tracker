@@ -2,11 +2,27 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Vicfungo</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+    <title>Vicfungo - Daily Habit Architecture</title>
     <meta name="description" content="AI-powered personal growth and premium habit tracker platform based on behavioral psychology." />
-    <meta property="og:title" content="Vicfungo" />
+    <meta property="og:title" content="Vicfungo - Daily Habit Architecture" />
     <meta property="og:description" content="AI-powered personal growth and premium habit tracker platform based on behavioral psychology." />
+    
+    <!-- PWA Manifest & Mobile Capability Tags -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#EA580C" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Vicfungo" />
+    
+    <!-- Icons -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/pwa-192x192.png" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <!-- Google Identity Services (GSI) Client -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>
   <body>
     <div id="root"></div>

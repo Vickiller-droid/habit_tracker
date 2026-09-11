@@ -1,7 +1,12 @@
 import React, { useState, useRef } from 'react';
 import { motion } from 'motion/react';
-import { Shield, Bell, Download, Upload, Trash2, Smartphone, Accessibility, Sparkles, CreditCard, Check, AlertTriangle } from 'lucide-react';
+import { Shield, Bell, Download, Upload, Trash2, Smartphone, Accessibility, Sparkles, CreditCard, Check, AlertTriangle, LogOut, Terminal } from 'lucide-react';
 import { UserProfile, UserStats, Habit } from '../types';
+import { PWAInstallPrompt } from './PWAInstallPrompt';
+import { GoogleSignInButton, GoogleIcon } from './GoogleSignInButton';
+import { CreatorBadge } from './CreatorBadge';
+import { AdminTelemetryPanel } from './AdminTelemetryPanel';
+import { isCreatorEmail } from '../utils/googleAuth';
 
 interface SettingsProps {
   userProfile: UserProfile;
@@ -14,9 +19,42 @@ interface SettingsProps {
   onToggleDarkMode: () => void;
   onUpdateProfile?: (profile: UserProfile) => void;
   onOpenTour?: () => void;
+  isAuthenticated?: boolean;
+  onGoogleSignIn?: () => void;
+  onSignOut?: () => void;
+  isCreatorAdminMode?: boolean;
+  onToggleCreatorAdminMode?: (enabled: boolean) => void;
+  onSimulateNextDay?: () => void;
+  onSendInstantTestPush?: () => void;
+  onResetSandboxData?: () => void;
+  onTriggerGraceShield?: () => void;
+  isSimulatedRisk?: boolean;
+  onAddTestStreak?: (days: number) => void;
 }
 
-export default function Settings({ userProfile, stats, habits, onUpgradePro, onRestoreData, onClearAllData, darkMode, onToggleDarkMode, onUpdateProfile, onOpenTour }: SettingsProps) {
+export default function Settings({
+  userProfile,
+  stats,
+  habits,
+  onUpgradePro,
+  onRestoreData,
+  onClearAllData,
+  darkMode,
+  onToggleDarkMode,
+  onUpdateProfile,
+  onOpenTour,
+  isAuthenticated = false,
+  onGoogleSignIn,
+  onSignOut,
+  isCreatorAdminMode = false,
+  onToggleCreatorAdminMode,
+  onSimulateNextDay,
+  onSendInstantTestPush,
+  onResetSandboxData,
+  onTriggerGraceShield,
+  isSimulatedRisk = false,
+  onAddTestStreak
+}: SettingsProps) {
   const [remindersEnabled, setRemindersEnabled] = useState<boolean>(true);
   const [highContrast, setHighContrast] = useState<boolean>(false);
   const [fontSize, setFontSize] = useState<'normal' | 'large'>('normal');
@@ -24,6 +62,9 @@ export default function Settings({ userProfile, stats, habits, onUpgradePro, onR
 
   const [notificationState, setNotificationState] = useState<string>('granted');
   const [purchaseSuccess, setPurchaseSuccess] = useState<boolean>(false);
+
+  const isCreatorAccount = userProfile.role === 'creator' || isCreatorEmail(userProfile.email);
+  const showAdminPanel = isCreatorAccount || isCreatorAdminMode;
 
   const [editingName, setEditingName] = useState<string>(userProfile.name);
   const [editingIdentity, setEditingIdentity] = useState<string>(userProfile.identityAnchor || '');
@@ -89,17 +130,39 @@ export default function Settings({ userProfile, stats, habits, onUpgradePro, onR
   const triggerMockNotification = () => {
     if (!remindersEnabled) return;
     
-    // Trigger Native Browser System Notification
+    // Trigger Native Browser System Notification (via SW or direct)
     if ('Notification' in window) {
       Notification.requestPermission().then((permission) => {
         setNotificationState(permission);
         if (permission === 'granted') {
-          new Notification('⏰ Vicfungo Habit Alert', {
-            body: 'Dr. Gethro says: "Time to complete your contract and secure your multiplier!"',
-            icon: '/favicon.ico',
-            tag: 'vicfungo-settings-test',
-            requireInteraction: true
-          });
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.ready
+              .then(registration => {
+                registration.showNotification('⏰ Vicfungo Habit Alert', {
+                  body: 'Dr. Gethro says: "Time to complete your contract and secure your multiplier!"',
+                  icon: '/favicon.ico',
+                  badge: '/favicon.ico',
+                  tag: 'vicfungo-settings-test',
+                  vibrate: [200, 100, 200],
+                  requireInteraction: true
+                } as NotificationOptions);
+              })
+              .catch(() => {
+                new Notification('⏰ Vicfungo Habit Alert', {
+                  body: 'Dr. Gethro says: "Time to complete your contract and secure your multiplier!"',
+                  icon: '/favicon.ico',
+                  tag: 'vicfungo-settings-test',
+                  requireInteraction: true
+                });
+              });
+          } else {
+            new Notification('⏰ Vicfungo Habit Alert', {
+              body: 'Dr. Gethro says: "Time to complete your contract and secure your multiplier!"',
+              icon: '/favicon.ico',
+              tag: 'vicfungo-settings-test',
+              requireInteraction: true
+            });
+          }
         }
       });
     }
@@ -175,6 +238,175 @@ export default function Settings({ userProfile, stats, habits, onUpgradePro, onR
           </div>
           <span className="text-xs bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-300 px-3 py-1 rounded-full font-bold">UNLIMITED ACCESS</span>
         </div>
+      )}
+
+      {/* PWA Native Installation Card */}
+      <PWAInstallPrompt variant="settings" darkMode={darkMode} />
+
+      {/* Google Authentication & Account Session Card */}
+      <div
+        id="settings-google-auth-card"
+        className={`p-6 rounded-[32px] border ${
+          darkMode ? 'bg-stone-900 border-stone-800' : 'bg-white border-stone-100'
+        } shadow-premium space-y-5 transition-colors`}
+      >
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-2xl flex items-center justify-center border shadow-xs ${
+              darkMode ? 'bg-[#1E2836] border-[#334255]' : 'bg-stone-50 border-stone-200'
+            }`}>
+              <GoogleIcon className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className={`font-bold ${darkMode ? 'text-stone-100' : 'text-stone-800'} text-sm`}>
+                  Google Account &amp; Identity
+                </h3>
+                {isAuthenticated ? (
+                  <span className="text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    AUTHENTICATED
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-mono font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-full">
+                    GUEST SESSION
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-stone-500 mt-0.5">
+                {isAuthenticated
+                  ? 'Your habits, streaks, and reflections are securely linked to your Google profile.'
+                  : 'Sign in to link and persist your habits, contracts, and Dr. Gethro AI logs across restarts.'}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {isAuthenticated ? (
+          <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+            darkMode ? 'bg-[#1E2836] border-[#334255]' : 'bg-stone-50/80 border-stone-200/80'
+          }`}>
+            <div className="flex items-center gap-3.5 min-w-0">
+              <div className="relative shrink-0">
+                {userProfile.avatarUrl ? (
+                  <img
+                    src={userProfile.avatarUrl}
+                    alt={userProfile.name}
+                    className="w-12 h-12 rounded-full object-cover border-2 border-orange-500 shadow-xs"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <div className="w-12 h-12 rounded-full bg-orange-500 text-white font-bold flex items-center justify-center text-base shadow-xs">
+                    {userProfile.name.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-emerald-500 text-white flex items-center justify-center border-2 border-white dark:border-stone-900 shadow-xs">
+                  <Check className="w-2.5 h-2.5 stroke-[3]" />
+                </div>
+              </div>
+
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h4 className={`font-bold text-sm truncate ${darkMode ? 'text-stone-100' : 'text-stone-900'}`}>
+                    {userProfile.name}
+                  </h4>
+                  <span className="text-[9px] bg-orange-500/15 text-orange-600 dark:text-orange-400 font-mono font-bold px-1.5 py-0.5 rounded">
+                    Google
+                  </span>
+                  {isCreatorAccount && (
+                    <CreatorBadge size="sm" darkMode={darkMode} label="Creator" />
+                  )}
+                </div>
+                <p className="text-xs text-stone-500 dark:text-stone-400 truncate mt-0.5">
+                  {userProfile.email || 'Connected with Google'}
+                </p>
+                <div className="flex items-center gap-2 mt-1 text-[11px] text-stone-400 dark:text-stone-500">
+                  <span>Linked: {habits.length} habits</span>
+                  <span>•</span>
+                  <span>Streak: {stats.streakDays} days</span>
+                  <span>•</span>
+                  <span>XP: {stats.xp}</span>
+                </div>
+              </div>
+            </div>
+
+            <button
+              id="btn-settings-logout"
+              type="button"
+              onClick={() => {
+                if (window.confirm('Are you sure you want to log out? Your local habit history remains safely stored on this device and you will return to the guest state.')) {
+                  onSignOut?.();
+                }
+              }}
+              className="px-4 py-2.5 rounded-xl border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shrink-0 active:scale-[0.98]"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Log Out</span>
+            </button>
+          </div>
+        ) : (
+          <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+            darkMode ? 'bg-[#1E2836] border-[#334255]' : 'bg-orange-50/40 border-orange-100'
+          }`}>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-stone-200 dark:bg-stone-700 text-stone-600 dark:text-stone-300 flex items-center justify-center font-bold text-sm shrink-0">
+                {userProfile.name ? userProfile.name.charAt(0).toUpperCase() : 'G'}
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={`font-bold text-xs ${darkMode ? 'text-stone-200' : 'text-stone-800'}`}>
+                    Active: {userProfile.name} (Guest Mode)
+                  </span>
+                  <span className="text-[9px] bg-stone-200 dark:bg-stone-700 text-stone-600 dark:text-stone-300 font-mono px-1.5 py-0.5 rounded">
+                    Local Device
+                  </span>
+                  {showAdminPanel && (
+                    <CreatorBadge size="sm" darkMode={darkMode} label="Creator" />
+                  )}
+                </div>
+                <p className="text-[11px] text-stone-500 mt-0.5">
+                  Connect your Google account to tie your habit architecture to your permanent identity.
+                </p>
+                <div className="flex items-center gap-2 mt-1">
+                  <button
+                    type="button"
+                    onClick={() => onToggleCreatorAdminMode?.(!isCreatorAdminMode)}
+                    className="text-[10px] font-mono text-amber-700 dark:text-amber-400 hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>⚡</span> {isCreatorAdminMode ? 'Creator Admin Mode Active' : 'Toggle Creator Admin Sandbox'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <GoogleSignInButton
+              id="btn-settings-google-signin"
+              onClick={() => onGoogleSignIn?.()}
+              darkMode={darkMode}
+              variant="outline"
+              text="Sign in with Google"
+              className="w-full sm:w-auto shrink-0"
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Hidden Admin & Telemetry Section (Conditionally rendered for Creator) */}
+      {showAdminPanel && (
+        <AdminTelemetryPanel
+          userProfile={userProfile}
+          stats={stats}
+          habits={habits}
+          darkMode={darkMode}
+          isCreatorAdminMode={isCreatorAdminMode}
+          onToggleCreatorAdminMode={(enabled) => onToggleCreatorAdminMode?.(enabled)}
+          onSimulateNextDay={() => onSimulateNextDay?.()}
+          onSendInstantTestPush={() => onSendInstantTestPush?.()}
+          onResetSandboxData={() => onResetSandboxData?.()}
+          onTriggerGraceShield={() => onTriggerGraceShield?.()}
+          isSimulatedRisk={isSimulatedRisk}
+          onAddTestStreak={(days) => onAddTestStreak?.(days)}
+        />
       )}
 
       {/* Settings Options Grid */}

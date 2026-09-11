@@ -23,6 +23,22 @@ import FeedbackWidget from './components/FeedbackWidget';
 import ThemeToggle from './components/ThemeToggle';
 import Toast, { ToastData } from './components/Toast';
 import GraceShieldRecoveryModal from './components/GraceShieldRecoveryModal';
+import { PWAInstallPrompt } from './components/PWAInstallPrompt';
+import { OfflineIndicator } from './components/OfflineIndicator';
+import { GoogleSignInButton, GoogleIcon } from './components/GoogleSignInButton';
+import { GoogleAuthModal } from './components/GoogleAuthModal';
+import { 
+  GoogleUser, 
+  getStoredGoogleUser, 
+  saveGoogleUserSession, 
+  clearGoogleUserSession, 
+  isUserAuthenticated,
+  isCreatorEmail,
+  resolveUserRole,
+  getCreatorAdminOverride,
+  setCreatorAdminOverride
+} from './utils/googleAuth';
+import { CreatorBadge } from './components/CreatorBadge';
 import { 
   checkAndDispatchDueReminders, 
   parseTimeString, 
@@ -142,6 +158,7 @@ export default function App() {
   
   // Custom Habit Builder Modal state
   const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
+  const [showGoogleModal, setShowGoogleModal] = useState<boolean>(false);
   const [isTourModalOpen, setIsTourModalOpen] = useState<boolean>(false);
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState<boolean>(false);
   const [showRelaunchConfirmModal, setShowRelaunchConfirmModal] = useState<boolean>(false);
@@ -162,10 +179,36 @@ export default function App() {
       Notification.requestPermission().then(permission => {
         setNotificationPermission(permission);
         if (permission === 'granted') {
-          new Notification('Vicfungo Enabled! 🚀', {
-            body: 'System notifications are active. You will receive habit nudges directly on your device.',
-            icon: '/favicon.ico'
-          });
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.ready
+              .then(registration => {
+                registration.showNotification('Vicfungo Enabled! 🚀', {
+                  body: 'System notifications are active. You will receive habit nudges directly on your device.',
+                  icon: '/favicon.ico',
+                  badge: '/favicon.ico',
+                  vibrate: [200, 100, 200]
+                } as NotificationOptions);
+              })
+              .catch(() => {
+                try {
+                  new Notification('Vicfungo Enabled! 🚀', {
+                    body: 'System notifications are active. You will receive habit nudges directly on your device.',
+                    icon: '/favicon.ico'
+                  });
+                } catch (e) {
+                  console.warn('Notification error:', e);
+                }
+              });
+          } else {
+            try {
+              new Notification('Vicfungo Enabled! 🚀', {
+                body: 'System notifications are active. You will receive habit nudges directly on your device.',
+                icon: '/favicon.ico'
+              });
+            } catch (e) {
+              console.warn('Notification error:', e);
+            }
+          }
           playSuccessSound();
           showToast('Vicfungo Enabled! 🚀', 'System notifications are active. You will receive habit nudges directly on your device.', 'success');
         } else if (permission === 'denied') {
@@ -181,11 +224,37 @@ export default function App() {
 
   const handleTriggerTestAlert = () => {
     playNotificationAlertSound();
-    if ('Notification' in window && Notification.permission === 'granted') {
+    if ('serviceWorker' in navigator && 'Notification' in window && Notification.permission === 'granted') {
+      navigator.serviceWorker.ready
+        .then(registration => {
+          registration.showNotification('⏰ Vicfungo Habit Alert', {
+            body: 'Time to complete your habit contract: Test Habit Contract',
+            icon: '/favicon.ico',
+            badge: '/favicon.ico',
+            tag: 'vicfungo-test-habit-alert',
+            vibrate: [200, 100, 200],
+            requireInteraction: true
+          } as NotificationOptions);
+        })
+        .catch(() => {
+          try {
+            new Notification('⏰ Vicfungo Habit Alert', {
+              body: 'Time to complete your habit contract: Test Habit Contract',
+              icon: '/favicon.ico',
+              badge: '/favicon.ico',
+              tag: 'vicfungo-test-habit-alert',
+              requireInteraction: true
+            });
+          } catch (e) {
+            console.warn('Test notification error:', e);
+          }
+        });
+    } else if ('Notification' in window && Notification.permission === 'granted') {
       try {
         new Notification('⏰ Vicfungo Habit Alert', {
-          body: 'Time to complete your contract: Test Habit Contract',
+          body: 'Time to complete your habit contract: Test Habit Contract',
           icon: '/favicon.ico',
+          badge: '/favicon.ico',
           tag: 'vicfungo-test-habit-alert',
           requireInteraction: true
         });
@@ -193,7 +262,7 @@ export default function App() {
         console.warn('Test notification error:', e);
       }
     }
-    showToast('⏰ Vicfungo Habit Alert', 'Time to complete your contract: Test Habit Contract (In-app companion toast active)', 'warning');
+    showToast('⏰ Vicfungo Habit Alert', 'Time to complete your habit contract: Test Habit Contract (In-app companion toast active)', 'warning');
   };
 
   // Acronym Validation State
@@ -329,6 +398,8 @@ export default function App() {
     const cachedStats = localStorage.getItem('vicfungo_stats');
     const cachedHabits = localStorage.getItem('vicfungo_habits');
     const cachedTodos = localStorage.getItem('vicfungo_todos');
+    const storedGoogleUser = getStoredGoogleUser();
+    const isAuth = isUserAuthenticated();
 
     let initialProfile: UserProfile | null = null;
     let initialStats: UserStats | null = null;
@@ -339,8 +410,62 @@ export default function App() {
       if (initialStats && initialStats.graceShieldAvailable === undefined && !initialStats.graceShieldLastUsedDate) {
         initialStats.graceShieldAvailable = true;
       }
+
+      // Re-hydrate session state if user signed in with Google
+      if (storedGoogleUser && isAuth && initialProfile) {
+        initialProfile = {
+          ...initialProfile,
+          isAuthenticated: true,
+          authProvider: 'google',
+          googleId: storedGoogleUser.id,
+          email: storedGoogleUser.email,
+          avatarUrl: storedGoogleUser.avatarUrl || initialProfile.avatarUrl
+        };
+        if (initialStats) {
+          initialStats.userId = storedGoogleUser.id;
+        }
+      }
+
       setProfile(initialProfile);
       setStats(initialStats);
+    } else if (storedGoogleUser && isAuth) {
+      // Re-hydrate authenticated user directly
+      initialProfile = {
+        name: storedGoogleUser.name,
+        email: storedGoogleUser.email,
+        avatarUrl: storedGoogleUser.avatarUrl,
+        googleId: storedGoogleUser.id,
+        authProvider: 'google',
+        isAuthenticated: true,
+        growthPersona: 'The Mindful Observer',
+        focusAreas: ['productivity', 'mindfulness'],
+        quizAnswers: {
+          motivation: 'Identity shift and long-term focus',
+          obstacle: 'Time management',
+          coachingTone: 'supportive',
+          stylePreference: 'adaptive'
+        },
+        joinedAt: new Date().toISOString(),
+        isPro: false,
+        identityAnchor: 'someone who builds consistency and health'
+      };
+      initialStats = {
+        userId: storedGoogleUser.id,
+        xp: 200,
+        level: 1,
+        streakMultiplier: 1.0,
+        bronzeBadges: ['Google Voyager'],
+        silverBadges: [],
+        goldBadges: [],
+        totalCompletedCount: 0,
+        streakDays: 1,
+        lastActiveDate: new Date().toISOString().split('T')[0],
+        graceShieldAvailable: true
+      };
+      setProfile(initialProfile);
+      setStats(initialStats);
+      localStorage.setItem('vicfungo_profile', JSON.stringify(initialProfile));
+      localStorage.setItem('vicfungo_stats', JSON.stringify(initialStats));
     }
     
     if (initialProfile) {
@@ -518,13 +643,101 @@ export default function App() {
 
   // Write changes to local storage whenever state changes
   const saveState = (newProfile: UserProfile, newStats: UserStats, newHabits: Habit[]) => {
-    const cleanHabits = deduplicateHabits(newHabits);
+    const userId = newProfile.googleId || (newProfile.isAuthenticated ? `google-${newProfile.email}` : undefined);
+    const enrichedStats: UserStats = userId ? { ...newStats, userId } : newStats;
+    const cleanHabits = deduplicateHabits(newHabits).map(h => userId && !h.userId ? { ...h, userId } : h);
+
     setProfile(newProfile);
-    setStats(newStats);
+    setStats(enrichedStats);
     setHabits(cleanHabits);
     localStorage.setItem('vicfungo_profile', JSON.stringify(newProfile));
-    localStorage.setItem('vicfungo_stats', JSON.stringify(newStats));
+    localStorage.setItem('vicfungo_stats', JSON.stringify(enrichedStats));
     localStorage.setItem('vicfungo_habits', JSON.stringify(cleanHabits));
+  };
+
+  const handleGoogleSignInSuccess = (user: GoogleUser) => {
+    saveGoogleUserSession(user);
+    setShowGoogleModal(false);
+
+    let updatedProfile: UserProfile;
+    let updatedStats: UserStats;
+
+    if (profile) {
+      updatedProfile = {
+        ...profile,
+        name: user.name || profile.name,
+        email: user.email,
+        avatarUrl: user.avatarUrl,
+        googleId: user.id,
+        authProvider: 'google',
+        isAuthenticated: true
+      };
+    } else {
+      updatedProfile = {
+        name: user.name,
+        email: user.email,
+        avatarUrl: user.avatarUrl,
+        googleId: user.id,
+        authProvider: 'google',
+        isAuthenticated: true,
+        growthPersona: 'The Mindful Observer',
+        focusAreas: ['productivity', 'mindfulness'],
+        quizAnswers: {
+          motivation: 'Identity shift and long-term focus',
+          obstacle: 'Time management',
+          coachingTone: 'supportive',
+          stylePreference: 'adaptive'
+        },
+        joinedAt: new Date().toISOString(),
+        isPro: false,
+        identityAnchor: 'someone who shows up every day with clarity & health'
+      };
+    }
+
+    if (stats) {
+      updatedStats = {
+        ...stats,
+        userId: user.id
+      };
+    } else {
+      updatedStats = {
+        userId: user.id,
+        xp: 200,
+        level: 1,
+        streakMultiplier: 1.0,
+        bronzeBadges: ['Google Voyager'],
+        silverBadges: [],
+        goldBadges: [],
+        totalCompletedCount: 0,
+        streakDays: 1,
+        lastActiveDate: new Date().toISOString().split('T')[0],
+        graceShieldAvailable: true
+      };
+    }
+
+    // Link all existing habits to this user profile
+    const updatedHabits = habits.map(h => ({
+      ...h,
+      userId: user.id
+    }));
+
+    saveState(updatedProfile, updatedStats, updatedHabits);
+    playSuccessSound();
+    showToast(`Google Sign-In Successful! 🚀`, `Welcome back, ${user.name}. Your habits, streaks, and reflections are linked.`, 'success');
+  };
+
+  const handleSignOut = () => {
+    clearGoogleUserSession();
+    if (profile) {
+      const guestProfile: UserProfile = {
+        ...profile,
+        isAuthenticated: false,
+        authProvider: 'local'
+      };
+      setProfile(guestProfile);
+      localStorage.setItem('vicfungo_profile', JSON.stringify(guestProfile));
+    }
+    showToast('Signed Out', 'Returned to guest session. Local habit records remain saved on your device.', 'info');
   };
 
   // Grace Shield status and cooldown computation
@@ -1124,6 +1337,7 @@ export default function App() {
     return (
       <Onboarding 
         onComplete={handleOnboardingComplete} 
+        onGoogleSignIn={handleGoogleSignInSuccess}
         darkMode={darkMode}
         onToggleDarkMode={handleToggleDarkMode}
       />
@@ -1191,15 +1405,43 @@ export default function App() {
           </div>
 
           {/* Quick User Identity Summary */}
-          <div className={`p-4 mx-3 my-3 ${
-            darkMode ? 'bg-[#1E2836] border-[#334255]' : 'bg-gradient-to-r from-stone-50 to-orange-50/30 border-stone-200/70'
-          } rounded-[24px] flex items-center gap-3 border transition-colors shadow-xs`}>
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-100 to-amber-100 text-orange-600 font-bold font-display flex items-center justify-center shadow-xs shrink-0 border border-orange-200/60">
-              {profile.name.charAt(0).toUpperCase()}
-            </div>
-            <div className="min-w-0">
-              <h4 className={`font-bold ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-900'} text-xs truncate`}>{profile.name}</h4>
-              <span className={`text-[10px] ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'} font-medium block truncate`}>Lvl {stats.level} Archetype</span>
+          <div 
+            id="sidebar-user-identity-card"
+            onClick={() => setCurrentView('settings')}
+            className={`p-3.5 mx-3 my-3 ${
+              darkMode ? 'bg-[#1E2836] border-[#334255] hover:border-[#FF7A1A]/50' : 'bg-gradient-to-r from-stone-50 to-orange-50/30 border-stone-200/70 hover:border-orange-300'
+            } rounded-[24px] flex items-center gap-3 border transition-all cursor-pointer shadow-xs group`}
+            title="Manage account in Settings"
+          >
+            {profile.avatarUrl ? (
+              <div className="relative shrink-0">
+                <img
+                  src={profile.avatarUrl}
+                  alt={profile.name}
+                  className="w-10 h-10 rounded-xl object-cover border border-orange-300/80 shadow-xs"
+                  referrerPolicy="no-referrer"
+                />
+                {profile.isAuthenticated && (
+                  <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-white dark:border-stone-900 flex items-center justify-center" title="Google account linked" />
+                )}
+              </div>
+            ) : (
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-100 to-amber-100 text-orange-600 font-bold font-display flex items-center justify-center shadow-xs shrink-0 border border-orange-200/60">
+                {profile.name.charAt(0).toUpperCase()}
+              </div>
+            )}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <h4 className={`font-bold ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-900'} text-xs truncate group-hover:text-[#FF7A1A] transition-colors`}>{profile.name}</h4>
+                {profile.isAuthenticated && (
+                  <span className="text-[8px] font-mono font-bold bg-orange-500/15 text-orange-600 dark:text-orange-400 px-1 py-0.5 rounded shrink-0">
+                    Google
+                  </span>
+                )}
+              </div>
+              <span className={`text-[10px] ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'} font-medium block truncate`}>
+                {profile.isAuthenticated && profile.email ? profile.email : `Lvl ${stats.level} Archetype`}
+              </span>
             </div>
           </div>
 
@@ -1346,6 +1588,48 @@ export default function App() {
               )}
             </button>
 
+            {/* PWA Install Action in Top Bar */}
+            <PWAInstallPrompt variant="header" darkMode={darkMode} />
+
+            {/* Google Authentication Status or Sign In Button */}
+            {profile.isAuthenticated ? (
+              <button
+                id="btn-header-google-account"
+                type="button"
+                onClick={() => setCurrentView('settings')}
+                className={`px-3 py-1.5 rounded-xl border font-bold text-xs transition-all flex items-center gap-2 cursor-pointer shrink-0 shadow-xs hover:shadow-md active:scale-95 ${
+                  darkMode 
+                    ? 'bg-[#1E2836] border-[#334255] text-[#F8FAFC] hover:bg-[#263242]' 
+                    : 'bg-white border-stone-200 text-stone-800 hover:bg-stone-50'
+                }`}
+                title={`Signed in as ${profile.name} (${profile.email || 'Google Account'}) - Open settings to manage`}
+              >
+                <div className="relative shrink-0">
+                  {profile.avatarUrl ? (
+                    <img
+                      src={profile.avatarUrl}
+                      alt={profile.name}
+                      className="w-5 h-5 rounded-full object-cover border border-orange-400"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div className="w-5 h-5 rounded-full bg-[#EA580C] text-white text-[10px] font-bold flex items-center justify-center">
+                      {profile.name.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 border border-white dark:border-stone-900" />
+                </div>
+                <span className="max-w-[110px] truncate hidden sm:inline">{profile.name}</span>
+              </button>
+            ) : (
+              <GoogleSignInButton
+                variant="header"
+                darkMode={darkMode}
+                onClick={() => setShowGoogleModal(true)}
+                className="shrink-0"
+              />
+            )}
+
             {/* Prominent Light / Dark theme toggle switch with sun/moon icons */}
             <ThemeToggle 
               darkMode={darkMode} 
@@ -1474,38 +1758,74 @@ export default function App() {
               : 'bg-gradient-to-r from-orange-50 to-white border-orange-100/60 text-stone-800 shadow-premium'
           } relative overflow-hidden flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4`} id="welcome-banner-node">
             <div className="absolute right-0 top-0 w-32 h-32 bg-orange-100/10 rounded-full blur-2xl pointer-events-none" />
-            <div className="flex-1">
-              <div className="flex items-center gap-2 mb-1.5">
-                <Sparkles className="w-4 h-4 text-[#FF7A1A] animate-pulse" />
-                <span className="text-[10px] font-mono font-bold text-[#FF7A1A] uppercase tracking-wider">DAILY AFFIRMATION PATHWAY</span>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-xl font-display font-extrabold tracking-tight">
-                  {motivationalMessage || (profile ? `Keep building momentum, ${profile.name}.` : "Consistency compounds.")}
-                </h2>
-                <button 
-                  onClick={() => setMotivationalMessage(generateMotivationalMessage(profile, stats))}
-                  className={`p-1 rounded-lg border transition-all cursor-pointer flex items-center justify-center ${
-                    darkMode 
-                      ? 'border-[#263242] text-[#94A3B8] hover:text-[#FF7A1A] hover:bg-[rgba(255,122,26,0.15)]' 
-                      : 'border-orange-150 text-stone-500 hover:text-[#FF8A3D] hover:bg-[#FF8A3D]/5'
-                  }`}
-                  title="Rotate motivation message"
-                >
-                  <RotateCw className="w-3 h-3" />
-                </button>
-              </div>
-              <p className={`text-xs ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'} mt-1`}>
-                Your daily habit stacks are synced. Dr. Gethro encourages logging actions to anchor your identity shift.
-              </p>
-              {profile?.identityAnchor && (
-                <div className="mt-3.5 inline-flex items-center gap-2 px-3 py-1.5 bg-orange-500/5 dark:bg-[rgba(255,122,26,0.15)] rounded-xl border border-orange-200/10 dark:border-[rgba(255,122,26,0.35)] text-xs text-orange-600 dark:text-[#FFB074]">
-                  <span className="font-bold text-[9px] uppercase font-mono tracking-wider bg-orange-100 dark:bg-[rgba(255,122,26,0.25)] px-1.5 py-0.5 rounded">Identity</span>
-                  <span className="italic font-semibold text-stone-750 dark:text-[#F8FAFC]">&ldquo;{profile.identityAnchor}&rdquo;</span>
+            <div className="flex-1 flex items-start gap-3.5">
+              {profile?.avatarUrl && (
+                <div className="relative shrink-0 hidden sm:block">
+                  <img
+                    src={profile.avatarUrl}
+                    alt={profile.name}
+                    className="w-12 h-12 rounded-2xl object-cover border-2 border-orange-400/90 shadow-md"
+                    referrerPolicy="no-referrer"
+                  />
+                  {profile.isAuthenticated && (
+                    <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-white dark:border-stone-900 flex items-center justify-center text-white text-[9px] font-bold" title="Google Sync Active">
+                      ✓
+                    </span>
+                  )}
                 </div>
               )}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                  <Sparkles className="w-4 h-4 text-[#FF7A1A] animate-pulse" />
+                  <span className="text-[10px] font-mono font-bold text-[#FF7A1A] uppercase tracking-wider">
+                    {profile?.isAuthenticated ? 'GOOGLE LINKED HABIT ARCHITECTURE' : 'DAILY AFFIRMATION PATHWAY'}
+                  </span>
+                  {profile?.isAuthenticated && (
+                    <span className="text-[9px] font-mono font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                      GOOGLE SYNC
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="text-xl font-display font-extrabold tracking-tight">
+                    {motivationalMessage || (profile ? `Keep building momentum, ${profile.name}.` : "Consistency compounds.")}
+                  </h2>
+                  <button 
+                    onClick={() => setMotivationalMessage(generateMotivationalMessage(profile, stats))}
+                    className={`p-1 rounded-lg border transition-all cursor-pointer flex items-center justify-center ${
+                      darkMode 
+                        ? 'border-[#263242] text-[#94A3B8] hover:text-[#FF7A1A] hover:bg-[rgba(255,122,26,0.15)]' 
+                        : 'border-orange-150 text-stone-500 hover:text-[#FF8A3D] hover:bg-[#FF8A3D]/5'
+                    }`}
+                    title="Rotate motivation message"
+                  >
+                    <RotateCw className="w-3 h-3" />
+                  </button>
+                </div>
+                <p className={`text-xs ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'} mt-1`}>
+                  Your daily habit stacks are synced. Dr. Gethro encourages logging actions to anchor your identity shift.
+                </p>
+                {profile?.identityAnchor && (
+                  <div className="mt-3.5 inline-flex items-center gap-2 px-3 py-1.5 bg-orange-500/5 dark:bg-[rgba(255,122,26,0.15)] rounded-xl border border-orange-200/10 dark:border-[rgba(255,122,26,0.35)] text-xs text-orange-600 dark:text-[#FFB074]">
+                    <span className="font-bold text-[9px] uppercase font-mono tracking-wider bg-orange-100 dark:bg-[rgba(255,122,26,0.25)] px-1.5 py-0.5 rounded">Identity</span>
+                    <span className="italic font-semibold text-stone-750 dark:text-[#F8FAFC]">&ldquo;{profile.identityAnchor}&rdquo;</span>
+                  </div>
+                )}
+              </div>
             </div>
             <div className="shrink-0 flex items-center gap-2">
+              {!profile?.isAuthenticated && (
+                <button
+                  id="btn-welcome-connect-google"
+                  type="button"
+                  onClick={() => setShowGoogleModal(true)}
+                  className="px-3 py-1.5 rounded-xl bg-white hover:bg-stone-50 text-stone-800 border border-stone-200 text-xs font-bold shadow-xs flex items-center gap-1.5 cursor-pointer transition active:scale-95"
+                  title="Link your Google account"
+                >
+                  <GoogleIcon className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Connect Google</span>
+                </button>
+              )}
               <span className="text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 px-2.5 py-1 rounded-full font-bold font-mono">
                 ● ACTIVE SESSION
               </span>
@@ -2545,6 +2865,9 @@ export default function App() {
                     localStorage.setItem('vicfungo_profile', JSON.stringify(updatedProfile));
                   }}
                   onOpenTour={() => setIsTourModalOpen(true)}
+                  isAuthenticated={!!profile.isAuthenticated}
+                  onGoogleSignIn={() => setShowGoogleModal(true)}
+                  onSignOut={handleSignOut}
                 />
               )}
 
@@ -3285,6 +3608,17 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Google Authentication Modal Dialog */}
+      <GoogleAuthModal
+        isOpen={showGoogleModal}
+        onClose={() => setShowGoogleModal(false)}
+        onSuccess={handleGoogleSignInSuccess}
+        darkMode={darkMode}
+      />
+
+      {/* Offline Status & Local Persistence Sync Notification */}
+      <OfflineIndicator />
     </div>
   );
 }

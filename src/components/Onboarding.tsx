@@ -3,15 +3,20 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Sparkles, Brain, ArrowRight, Check, Bell } from 'lucide-react';
 import { UserProfile, UserStats, GrowthPersona, HabitCategory, Habit } from '../types';
 import ThemeToggle from './ThemeToggle';
+import { GoogleSignInButton } from './GoogleSignInButton';
+import { GoogleAuthModal } from './GoogleAuthModal';
+import { GoogleUser } from '../utils/googleAuth';
 
 interface OnboardingProps {
   onComplete: (profile: UserProfile, stats: UserStats, initialHabit?: Habit) => void;
+  onGoogleSignIn?: (user: GoogleUser) => void;
   darkMode?: boolean;
   onToggleDarkMode?: () => void;
 }
 
-export default function Onboarding({ onComplete, darkMode = false, onToggleDarkMode }: OnboardingProps) {
+export default function Onboarding({ onComplete, onGoogleSignIn, darkMode = false, onToggleDarkMode }: OnboardingProps) {
   const [step, setStep] = useState<number>(0);
+  const [showGoogleModal, setShowGoogleModal] = useState<boolean>(false);
   const [name, setName] = useState<string>('');
   const [identityAnchor, setIdentityAnchor] = useState<string>('');
   const [motivation, setMotivation] = useState<string>('');
@@ -67,6 +72,50 @@ export default function Onboarding({ onComplete, darkMode = false, onToggleDarkM
     if (obstacle === 'distracted') return 'The Identity Shifter';
     if (obstacle === 'lose-interest') return 'The Game Strategist';
     return 'The Mindful Observer';
+  };
+
+  const handleGoogleSuccess = (user: GoogleUser) => {
+    setShowGoogleModal(false);
+    if (onGoogleSignIn) {
+      onGoogleSignIn(user);
+    } else {
+      const persona = calculatePersona();
+      const profile: UserProfile = {
+        name: user.name,
+        email: user.email,
+        avatarUrl: user.avatarUrl,
+        googleId: user.id,
+        authProvider: 'google',
+        isAuthenticated: true,
+        growthPersona: persona,
+        focusAreas: selectedFocus.length > 0 ? selectedFocus : ['productivity', 'mindfulness'],
+        quizAnswers: {
+          motivation: motivation || 'Identity shift and long-term focus',
+          obstacle: obstacle || 'Time management',
+          coachingTone: coachingTone || 'supportive',
+          stylePreference: 'adaptive'
+        },
+        joinedAt: new Date().toISOString(),
+        isPro: false,
+        identityAnchor: identityAnchor.trim() || `someone who shows up every day with clarity & health`
+      };
+
+      const stats: UserStats = {
+        userId: user.id,
+        xp: 200,
+        level: 1,
+        streakMultiplier: 1.0,
+        bronzeBadges: ['Google Voyager'],
+        silverBadges: [],
+        goldBadges: [],
+        totalCompletedCount: 0,
+        streakDays: 1,
+        lastActiveDate: new Date().toISOString().split('T')[0],
+        graceShieldAvailable: true
+      };
+
+      onComplete(profile, stats);
+    }
   };
 
   const handleFinish = async () => {
@@ -248,14 +297,28 @@ export default function Onboarding({ onComplete, darkMode = false, onToggleDarkM
                   </div>
                 </div>
 
-                <button
-                  id="btn-onboarding-start"
-                  onClick={() => setStep(1)}
-                  className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-orange-500 via-[#FF7A1A] to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-semibold rounded-2xl transition-all duration-200 shadow-premium-orange hover:shadow-[0_14px_32px_-6px_rgba(255,122,41,0.5)] active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer mx-auto"
-                >
-                  <span>Discover Your Archetype</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
+                <div className="flex flex-col sm:flex-row items-center justify-center gap-3.5 max-w-lg mx-auto">
+                  <button
+                    id="btn-onboarding-start"
+                    onClick={() => setStep(1)}
+                    className="w-full sm:w-auto flex-1 px-7 py-3.5 bg-gradient-to-r from-orange-500 via-[#FF7A1A] to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-semibold rounded-2xl transition-all duration-200 shadow-premium-orange hover:shadow-[0_14px_32px_-6px_rgba(255,122,41,0.5)] active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <span>Discover Your Archetype</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+
+                  <GoogleSignInButton
+                    id="btn-onboarding-google-signin"
+                    onClick={() => setShowGoogleModal(true)}
+                    darkMode={darkMode}
+                    text="Sign in with Google"
+                    className="w-full sm:w-auto"
+                  />
+                </div>
+
+                <p className={`text-xs mt-5 ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'} font-medium`}>
+                  Returning user? Sign in with Google to immediately sync your habits and streak records.
+                </p>
               </motion.div>
             )}
 
@@ -269,10 +332,18 @@ export default function Onboarding({ onComplete, darkMode = false, onToggleDarkM
                 exit="exit"
                 id="onboarding-step-1"
               >
-                <div className="mb-5">
-                  <span className="text-xs font-semibold text-orange-700 dark:text-[#FFB074] uppercase tracking-wider bg-orange-50 dark:bg-[rgba(255,122,26,0.15)] border border-orange-200/60 dark:border-[rgba(255,122,26,0.35)] px-2.5 py-1 rounded-full font-mono">Identity</span>
-                  <h2 className={`text-2xl font-display font-bold ${darkMode ? 'text-[#F8FAFC]' : 'text-[#0F172A]'} mt-2.5`}>Tell us about yourself</h2>
-                  <p className={`${darkMode ? 'text-[#E4E4E7]' : 'text-slate-600'} text-xs mt-1`}>Our AI Coach will address you and tailor your psychological feedback based on this identity.</p>
+                <div className="mb-5 flex items-start justify-between flex-wrap gap-2">
+                  <div>
+                    <span className="text-xs font-semibold text-orange-700 dark:text-[#FFB074] uppercase tracking-wider bg-orange-50 dark:bg-[rgba(255,122,26,0.15)] border border-orange-200/60 dark:border-[rgba(255,122,26,0.35)] px-2.5 py-1 rounded-full font-mono">Identity</span>
+                    <h2 className={`text-2xl font-display font-bold ${darkMode ? 'text-[#F8FAFC]' : 'text-[#0F172A]'} mt-2.5`}>Tell us about yourself</h2>
+                    <p className={`${darkMode ? 'text-[#E4E4E7]' : 'text-slate-600'} text-xs mt-1`}>Our AI Coach will address you and tailor your psychological feedback based on this identity.</p>
+                  </div>
+                  <GoogleSignInButton
+                    variant="compact"
+                    darkMode={darkMode}
+                    text="Autofill with Google"
+                    onClick={() => setShowGoogleModal(true)}
+                  />
                 </div>
 
                 <div className="space-y-4 mb-6">
@@ -847,6 +918,14 @@ export default function Onboarding({ onComplete, darkMode = false, onToggleDarkM
           </AnimatePresence>
         </div>
       </div>
+
+      {/* Google Authentication Modal */}
+      <GoogleAuthModal
+        isOpen={showGoogleModal}
+        onClose={() => setShowGoogleModal(false)}
+        onSuccess={handleGoogleSuccess}
+        darkMode={darkMode}
+      />
     </div>
   );
 }
