@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { X, Check, Shield, Sparkles, Key, ChevronDown, ChevronUp, UserCheck, ArrowRight } from 'lucide-react';
+import { X, Shield, Key, ChevronDown, ChevronUp } from 'lucide-react';
 import { GoogleIcon } from './GoogleSignInButton';
 import { 
   GoogleUser, 
@@ -8,8 +7,7 @@ import {
   getGoogleClientId, 
   setGoogleClientId, 
   decodeGoogleJwt,
-  resolveUserRole,
-  isCreatorEmail
+  resolveUserRole
 } from '../utils/googleAuth';
 
 interface GoogleAuthModalProps {
@@ -25,11 +23,10 @@ export const GoogleAuthModal: React.FC<GoogleAuthModalProps> = ({
   onClose,
   onSuccess,
   darkMode = false,
-  userEmailSuggestion = 'victordanielgamco@gmail.com'
+  userEmailSuggestion = ''
 }) => {
-  const [activeTab, setActiveTab] = useState<'quick' | 'custom'>('quick');
-  const [customName, setCustomName] = useState<string>('Victor Daniel');
-  const [customEmail, setCustomEmail] = useState<string>(userEmailSuggestion);
+  const [customName, setCustomName] = useState<string>('');
+  const [customEmail, setCustomEmail] = useState<string>(userEmailSuggestion || '');
   const [clientId, setClientId] = useState<string>('');
   const [showConfigOptions, setShowConfigOptions] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
@@ -202,73 +199,6 @@ export const GoogleAuthModal: React.FC<GoogleAuthModalProps> = ({
             </div>
           )}
 
-          {/* Quick Detected Account Option */}
-          <div>
-            <span className={`block text-[10px] font-bold uppercase tracking-wider mb-2 ${
-              darkMode ? 'text-[#94A3B8]' : 'text-stone-500'
-            }`}>
-              One-Click Google Account Sign-In
-            </span>
-
-            <button
-              id="btn-google-auth-quick-select"
-              type="button"
-              onClick={() => handleQuickSignIn('Victor Daniel', userEmailSuggestion)}
-              disabled={isProcessing}
-              className={`w-full p-4 rounded-2xl border text-left flex items-center justify-between gap-3 transition-all duration-200 cursor-pointer group shadow-xs hover:shadow-md ${
-                darkMode
-                  ? 'bg-[#1E2836] hover:bg-[#253243] border-[#334255] hover:border-orange-500/50'
-                  : 'bg-stone-50/70 hover:bg-orange-50/40 border-stone-200 hover:border-orange-300'
-              }`}
-            >
-              <div className="flex items-center gap-3.5 min-w-0">
-                <div className="relative shrink-0">
-                  <img
-                    src={generateAvatarUrl(userEmailSuggestion)}
-                    alt="Victor Daniel"
-                    className="w-11 h-11 rounded-full object-cover border border-orange-200/80 shadow-xs"
-                    referrerPolicy="no-referrer"
-                  />
-                  <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-white dark:bg-slate-900 border border-stone-200 dark:border-stone-700 flex items-center justify-center">
-                    <GoogleIcon className="w-2.5 h-2.5" />
-                  </div>
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <h4 className={`font-bold text-sm truncate ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-900'}`}>
-                      Victor Daniel
-                    </h4>
-                    <span className="text-[9px] bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-mono font-bold px-1.5 py-0.5 rounded">
-                      Google
-                    </span>
-                    {isCreatorEmail(userEmailSuggestion) && (
-                      <span className="text-[9px] bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 font-mono font-bold px-1.5 py-0.5 rounded flex items-center gap-0.5">
-                        <span>⚡</span> Creator Whitelist
-                      </span>
-                    )}
-                  </div>
-                  <p className={`text-xs truncate mt-0.5 ${darkMode ? 'text-[#94A3B8]' : 'text-stone-500'}`}>
-                    {userEmailSuggestion}
-                  </p>
-                </div>
-              </div>
-
-              <div className="w-8 h-8 rounded-xl bg-orange-500 text-white flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform">
-                <ArrowRight className="w-4 h-4" />
-              </div>
-            </button>
-          </div>
-
-          {/* Divider */}
-          <div className="relative flex items-center justify-center">
-            <div className={`w-full border-t ${darkMode ? 'border-[#263242]' : 'border-stone-100'}`} />
-            <span className={`absolute px-3 text-[10px] uppercase font-mono font-bold ${
-              darkMode ? 'bg-[#171F2A] text-[#94A3B8]' : 'bg-white text-stone-400'
-            }`}>
-              Or sign in with custom details
-            </span>
-          </div>
-
           {/* Custom Name / Email fields */}
           <div className="space-y-3">
             <div>
@@ -282,7 +212,7 @@ export const GoogleAuthModal: React.FC<GoogleAuthModalProps> = ({
                 type="text"
                 value={customName}
                 onChange={(e) => setCustomName(e.target.value)}
-                placeholder="e.g. Victor Daniel"
+                placeholder="e.g. Alex Johnson"
                 className={`w-full px-3.5 py-2 rounded-xl border text-xs font-semibold focus:outline-none focus:border-orange-500 ${
                   darkMode ? 'bg-[#1E2836] border-[#334255] text-stone-100' : 'bg-white border-stone-200 text-stone-800'
                 }`}

@@ -85,7 +85,11 @@ export const AdminTelemetryPanel: React.FC<AdminTelemetryPanelProps> = ({
     }
   }, []);
 
-  const isWhitelisted = isCreatorEmail(userProfile.email);
+  const isWhitelisted = !!userProfile.isAuthenticated && isCreatorEmail(userProfile.email);
+
+  if (!isWhitelisted) {
+    return null;
+  }
 
   return (
     <div 

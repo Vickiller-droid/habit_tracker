@@ -413,26 +413,39 @@ export default function App() {
 
       // Re-hydrate session state if user signed in with Google
       if (storedGoogleUser && isAuth && initialProfile) {
+        const verifiedRole = resolveUserRole(storedGoogleUser.email, true);
         initialProfile = {
           ...initialProfile,
           isAuthenticated: true,
           authProvider: 'google',
           googleId: storedGoogleUser.id,
           email: storedGoogleUser.email,
+          role: verifiedRole,
           avatarUrl: storedGoogleUser.avatarUrl || initialProfile.avatarUrl
         };
         if (initialStats) {
           initialStats.userId = storedGoogleUser.id;
         }
+      } else if (initialProfile) {
+        // Unauthenticated guest user
+        initialProfile = {
+          ...initialProfile,
+          isAuthenticated: false,
+          role: 'guest',
+          email: undefined,
+          googleId: undefined
+        };
       }
 
       setProfile(initialProfile);
       setStats(initialStats);
     } else if (storedGoogleUser && isAuth) {
+      const verifiedRole = resolveUserRole(storedGoogleUser.email, true);
       // Re-hydrate authenticated user directly
       initialProfile = {
         name: storedGoogleUser.name,
         email: storedGoogleUser.email,
+        role: verifiedRole,
         avatarUrl: storedGoogleUser.avatarUrl,
         googleId: storedGoogleUser.id,
         authProvider: 'google',
@@ -656,6 +669,8 @@ export default function App() {
   };
 
   const handleGoogleSignInSuccess = (user: GoogleUser) => {
+    const verifiedRole = resolveUserRole(user.email, true);
+    user.role = verifiedRole;
     saveGoogleUserSession(user);
     setShowGoogleModal(false);
 
@@ -670,7 +685,8 @@ export default function App() {
         avatarUrl: user.avatarUrl,
         googleId: user.id,
         authProvider: 'google',
-        isAuthenticated: true
+        isAuthenticated: true,
+        role: verifiedRole
       };
     } else {
       updatedProfile = {
@@ -680,6 +696,7 @@ export default function App() {
         googleId: user.id,
         authProvider: 'google',
         isAuthenticated: true,
+        role: verifiedRole,
         growthPersona: 'The Mindful Observer',
         focusAreas: ['productivity', 'mindfulness'],
         quizAnswers: {
@@ -732,7 +749,10 @@ export default function App() {
       const guestProfile: UserProfile = {
         ...profile,
         isAuthenticated: false,
-        authProvider: 'local'
+        authProvider: 'local',
+        email: undefined,
+        googleId: undefined,
+        role: 'guest'
       };
       setProfile(guestProfile);
       localStorage.setItem('vicfungo_profile', JSON.stringify(guestProfile));
@@ -1379,7 +1399,7 @@ export default function App() {
   ));
 
   return (
-    <div id="app-root" className={`min-h-screen ${
+    <div id="app-root" className={`min-h-screen w-full max-w-full overflow-x-hidden ${
       darkMode ? 'bg-[#0F141C] text-[#F8FAFC]' : 'bg-[#FEFAF7] text-stone-800'
     } flex flex-col md:flex-row font-sans selection:bg-orange-100 selection:text-orange-900 transition-colors duration-300`}>
       
@@ -1497,12 +1517,12 @@ export default function App() {
       </aside>
 
       {/* Main Panel Frame */}
-      <main className="flex-1 flex flex-col min-w-0" id="main-panel-frame">
+      <main className="flex-1 flex flex-col min-w-0 w-full max-w-full overflow-x-hidden" id="main-panel-frame">
         
         {/* Universal Subheader with calendar status node */}
         <header className={`${
           darkMode ? 'bg-[#171F2A] border-[#263242] text-[#F8FAFC]' : 'bg-white border-stone-100 text-stone-800'
-        } p-4 sm:p-6 border-b flex items-center justify-between flex-wrap gap-4 z-10 shrink-0 transition-colors duration-300`}>
+        } p-4 sm:p-6 border-b flex items-center justify-between flex-wrap gap-3 z-10 shrink-0 w-full max-w-full transition-colors duration-300`}>
           <div>
             <span className="text-[10px] text-orange-700 dark:text-[#FFB074] font-bold font-mono tracking-wider uppercase bg-orange-50 dark:bg-[rgba(255,122,26,0.15)] border border-orange-200 dark:border-[rgba(255,122,26,0.35)] px-2 py-0.5 rounded">BIOLOGICAL HABIT CYCLE</span>
             <h1 className={`text-xl font-display font-extrabold ${darkMode ? 'text-[#F8FAFC]' : 'text-stone-900'} mt-1 tracking-tight`}>
@@ -1515,12 +1535,12 @@ export default function App() {
             </h1>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center flex-wrap gap-2 justify-end">
             {/* Feedback & Community Ideas Button */}
             <button
               id="btn-header-feedback"
               onClick={() => setIsFeedbackModalOpen(true)}
-              className={`px-3 py-1.5 rounded-xl border font-bold text-xs transition flex items-center gap-1.5 cursor-pointer ${
+              className={`hidden sm:flex px-3 py-1.5 rounded-xl border font-bold text-xs transition items-center gap-1.5 cursor-pointer shrink-0 ${
                 darkMode 
                   ? 'bg-[rgba(245,158,11,0.15)] border-[rgba(245,158,11,0.35)] text-[#FCD34D] hover:bg-[rgba(245,158,11,0.25)]' 
                   : 'bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100'
@@ -1528,14 +1548,14 @@ export default function App() {
               title="Feedback & Community Ideas"
             >
               <MessageSquare className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Feedback & Ideas</span>
+              <span>Feedback & Ideas</span>
             </button>
 
             {/* Take Interactive Tour Button */}
             <button
               id="btn-header-take-tour"
               onClick={() => setIsTourModalOpen(true)}
-              className={`px-3 py-1.5 rounded-xl border font-bold text-xs transition flex items-center gap-1.5 cursor-pointer ${
+              className={`hidden sm:flex px-3 py-1.5 rounded-xl border font-bold text-xs transition items-center gap-1.5 cursor-pointer shrink-0 ${
                 darkMode 
                   ? 'bg-[rgba(255,122,26,0.15)] border-[rgba(255,122,26,0.35)] text-[#FFB074] hover:bg-[rgba(255,122,26,0.25)]' 
                   : 'bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100'
@@ -1543,14 +1563,14 @@ export default function App() {
               title="Replay Interactive Tour"
             >
               <Compass className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Take Tour</span>
+              <span>Take Tour</span>
             </button>
 
             {/* Relaunch as New User Button */}
             <button
               id="btn-header-relaunch-new-user"
               onClick={() => setShowRelaunchConfirmModal(true)}
-              className={`px-3 py-1.5 rounded-xl border font-bold text-xs transition flex items-center gap-1.5 cursor-pointer ${
+              className={`hidden md:flex px-3 py-1.5 rounded-xl border font-bold text-xs transition items-center gap-1.5 cursor-pointer shrink-0 ${
                 darkMode 
                   ? 'bg-[rgba(239,68,68,0.15)] border-[rgba(239,68,68,0.35)] text-[#FCA5A5] hover:bg-[rgba(239,68,68,0.25)]' 
                   : 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100'
@@ -1558,7 +1578,7 @@ export default function App() {
               title="Relaunch as New User (Reset Onboarding)"
             >
               <RotateCw className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Relaunch App</span>
+              <span>Relaunch App</span>
             </button>
 
             {/* Dedicated High-Visibility System Alerts Button */}
@@ -2160,7 +2180,7 @@ export default function App() {
                                 </p>
 
                                 {/* Vessel Row */}
-                                <div className={`grid grid-cols-3 gap-3 pt-2 ${darkMode ? 'bg-[#0F141C] border-[#263242]' : 'bg-stone-50/50 border-stone-150/45'} p-4 rounded-3xl border`}>
+                                <div className={`grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 ${darkMode ? 'bg-[#0F141C] border-[#263242]' : 'bg-stone-50/50 border-stone-150/45'} p-4 rounded-3xl border`}>
                                   {[
                                     { name: 'Dopamine', pct: dopaminePct, color: 'from-[#FF7A1A] to-[#F59E0B]', glow: 'shadow-orange-500/40', textColor: 'text-[#FF7A1A]', bubbleColor: 'bg-orange-300', note: 'Productivity' },
                                     { name: 'Serotonin', pct: serotoninPct, color: 'from-emerald-500 to-teal-400', glow: 'shadow-emerald-500/40', textColor: 'text-emerald-500', bubbleColor: 'bg-emerald-300', note: 'Mindfulness' },
@@ -2965,7 +2985,7 @@ export default function App() {
                   <label className={`block text-xs font-semibold ${darkMode ? 'text-[#94A3B8]' : 'text-[#334155]'} mb-1.5`}>
                     Difficulty Level
                   </label>
-                  <div className="grid grid-cols-3 gap-2.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                     {(['easy', 'medium', 'hard'] as const).map((diff) => {
                       const isSelected = newHabitDifficulty === diff;
                       const label = diff === 'easy' ? 'Quick (< 2m)' : diff === 'medium' ? 'Medium (5-15m)' : 'Deep Focus (30m+)';
@@ -3441,7 +3461,7 @@ export default function App() {
                     We record your emotional feedback separately from completion status to track cognitive energy trends.
                   </p>
 
-                  <div className="grid grid-cols-2 gap-3 w-full max-w-md mt-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-md mt-6">
                     {[
                       { key: 'easy', label: 'Easy', desc: 'No friction', emoji: '😊', color: 'hover:border-emerald-500 hover:bg-emerald-50/15' },
                       { key: 'challenging', label: 'Challenging', desc: 'Took effort', emoji: '💪', color: 'hover:border-orange-500 hover:bg-orange-50/15' },

@@ -392,7 +392,7 @@ export default function WearableSync({ stats, onSyncComplete, darkMode = false }
             </div>
 
             {syncedData ? (
-              <div className="grid grid-cols-3 gap-3 mb-6 animate-scaleIn" id="wearable-data-grids">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6 animate-scaleIn" id="wearable-data-grids">
                 <div className={`p-4 rounded-2xl text-center border ${
                   darkMode ? 'bg-stone-800/40 border-stone-750' : 'bg-orange-50/15 border-orange-100/50'
                 }`}>

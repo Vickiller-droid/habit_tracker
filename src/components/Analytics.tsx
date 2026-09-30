@@ -202,7 +202,7 @@ export default function Analytics({ habits, userProfile, stats, darkMode = false
       </div>
 
       {/* Numerical Stats Bento */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
         
         <div className={`p-5 rounded-[32px] border shadow-premium flex items-center gap-3 ${
           darkMode ? 'bg-[#171F2A] border-[#334255]' : 'bg-white border-stone-100'

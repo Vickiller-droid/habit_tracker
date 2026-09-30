@@ -63,8 +63,8 @@ export default function Settings({
   const [notificationState, setNotificationState] = useState<string>('granted');
   const [purchaseSuccess, setPurchaseSuccess] = useState<boolean>(false);
 
-  const isCreatorAccount = userProfile.role === 'creator' || isCreatorEmail(userProfile.email);
-  const showAdminPanel = isCreatorAccount || isCreatorAdminMode;
+  const isCreatorAccount = !!userProfile.isAuthenticated && isCreatorEmail(userProfile.email);
+  const showAdminPanel = isCreatorAccount;
 
   const [editingName, setEditingName] = useState<string>(userProfile.name);
   const [editingIdentity, setEditingIdentity] = useState<string>(userProfile.identityAnchor || '');
@@ -360,22 +360,10 @@ export default function Settings({
                   <span className="text-[9px] bg-stone-200 dark:bg-stone-700 text-stone-600 dark:text-stone-300 font-mono px-1.5 py-0.5 rounded">
                     Local Device
                   </span>
-                  {showAdminPanel && (
-                    <CreatorBadge size="sm" darkMode={darkMode} label="Creator" />
-                  )}
                 </div>
                 <p className="text-[11px] text-stone-500 mt-0.5">
                   Connect your Google account to tie your habit architecture to your permanent identity.
                 </p>
-                <div className="flex items-center gap-2 mt-1">
-                  <button
-                    type="button"
-                    onClick={() => onToggleCreatorAdminMode?.(!isCreatorAdminMode)}
-                    className="text-[10px] font-mono text-amber-700 dark:text-amber-400 hover:underline flex items-center gap-1 cursor-pointer"
-                  >
-                    <span>⚡</span> {isCreatorAdminMode ? 'Creator Admin Mode Active' : 'Toggle Creator Admin Sandbox'}
-                  </button>
-                </div>
               </div>
             </div>
 
@@ -646,7 +634,7 @@ export default function Settings({
               Vicfungo prioritizes your cognitive data ownership. Since we run offline-first, you can back up your logs to a JSON file or restore them instantly on other devices.
             </p>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <button
                 id="btn-backup-export"
                 onClick={handleExportBackup}

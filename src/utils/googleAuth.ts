@@ -43,23 +43,23 @@ export function isCreatorEmail(email?: string): boolean {
  * Checks if the Creator Admin toggle override is enabled
  */
 export function getCreatorAdminOverride(): boolean {
-  if (typeof window === 'undefined') return false;
-  return localStorage.getItem(CREATOR_OVERRIDE_KEY) === 'true';
+  return false;
 }
 
 /**
- * Sets the Creator Admin toggle override
+ * Sets the Creator Admin toggle override (disabled for security)
  */
-export function setCreatorAdminOverride(enabled: boolean): void {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(CREATOR_OVERRIDE_KEY, enabled ? 'true' : 'false');
+export function setCreatorAdminOverride(_enabled: boolean): void {
+  // Override bypass permanently disabled
 }
 
 /**
- * Determine the user role based on email, authentication status, and override
+ * Determine the user role based on email, authentication status, and verification.
+ * Strictly requires the verified account email to match ADMIN_EMAILS whitelist.
+ * Overrides or unauthenticated sessions can NEVER grant Creator/Admin status.
  */
 export function resolveUserRole(email?: string, isAuthenticated: boolean = false): AuthRole {
-  if (isCreatorEmail(email) || getCreatorAdminOverride()) {
+  if (isAuthenticated && isCreatorEmail(email)) {
     return 'creator';
   }
   return isAuthenticated ? 'member' : 'guest';
